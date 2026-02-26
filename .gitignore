@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+vendor/
+
+# React Native
+.metro-health-check*
+
+# iOS
+ios/Pods/
+ios/build/
+ios/*.xcworkspace/xcuserdata/
+ios/*.xcodeproj/xcuserdata/
+*.hmap
+*.ipa
+
+# Android
+android/app/build/
+android/build/
+android/.gradle/
+*.apk
+*.aab
+local.properties
+
+# Xcode
+DerivedData/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+xcuserdata/
+
+# macOS
+.DS_Store
+
+# Env
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+
+# Buck
+buck-out/
+\.buckd/
+
+# Bundler (Ruby)
+vendor/bundle/
+
+# Temporary files
+*.log
+*.tmp
