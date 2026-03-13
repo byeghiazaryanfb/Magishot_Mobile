@@ -22,6 +22,7 @@ export interface VideoJob {
 export interface VideoGalleryItem {
   videoId: string;
   videoUrl: string;
+  relativeUrl: string;
   fileName: string;
   mimeType: string;
   fileSizeBytes: number;
@@ -69,6 +70,7 @@ function mapRawVideo(raw: RawVideoGalleryItem): VideoGalleryItem {
   return {
     videoId: raw.id,
     videoUrl: raw.fullUrl,
+    relativeUrl: raw.relativeUrl,
     fileName: raw.fileName,
     mimeType: raw.mimeType,
     fileSizeBytes: raw.fileSizeBytes,
@@ -139,7 +141,7 @@ export const persistViewedVideo = createAsyncThunk(
 export const fetchVideoGallery = createAsyncThunk(
   'videoNotification/fetchVideoGallery',
   async (
-    {cursor, pageSize = 20}: {cursor?: string; pageSize?: number},
+    {cursor, pageSize = 20, status}: {cursor?: string; pageSize?: number; status?: string},
     {getState},
   ) => {
     const state = getState() as RootState;
@@ -147,6 +149,7 @@ export const fetchVideoGallery = createAsyncThunk(
     const params = new URLSearchParams();
     if (cursor) params.append('cursor', cursor);
     params.append('pageSize', String(pageSize));
+    if (status) params.append('status', status);
     const query = params.toString();
     const url = `/api/gemini/GeminiVideo/gallery${query ? `?${query}` : ''}`;
     const raw = await api.get<RawVideoGalleryResponse>(
@@ -266,6 +269,16 @@ const videoNotificationSlice = createSlice({
       delete state.jobs[action.payload];
       state.unreadCount = recalcUnread(state);
     },
+    clearStaleJobs(state) {
+      // Remove pending/processing jobs — fresh gallery data will have the real status
+      Object.keys(state.jobs).forEach(id => {
+        const job = state.jobs[id];
+        if (job.status === 'pending' || job.status === 'processing') {
+          delete state.jobs[id];
+        }
+      });
+      state.unreadCount = recalcUnread(state);
+    },
     resetGallery(state) {
       state.galleryVideos = [];
       state.galleryHasMore = false;
@@ -342,6 +355,7 @@ export const {
   markAllVideosViewed,
   clearUnreadBadge,
   removeJob,
+  clearStaleJobs,
   resetGallery,
   clearAllVideoNotifications,
 } = videoNotificationSlice.actions;

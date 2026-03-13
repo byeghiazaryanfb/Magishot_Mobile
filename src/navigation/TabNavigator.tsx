@@ -3,16 +3,23 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useTheme} from '../theme/ThemeContext';
+import {useAppSelector} from '../store/hooks';
 import HomeScreen from '../screens/HomeScreen';
 import TryOnScreen from '../screens/TryOnScreen';
 import VideoScreen from '../screens/VideoScreen';
 import EditScreen from '../screens/EditScreen';
+import ForBusinessScreen from '../screens/ForBusinessScreen';
 
 const Tab = createBottomTabNavigator();
 
 const TabNavigator: React.FC = () => {
   const {colors, isDark} = useTheme();
   const insets = useSafeAreaInsets();
+  const businessMode = useAppSelector(state => state.app.businessMode);
+
+  if (businessMode) {
+    return <ForBusinessScreen />;
+  }
 
   // Add safe area bottom inset for devices with home indicator
   const bottomPadding = Math.max(insets.bottom, 4);

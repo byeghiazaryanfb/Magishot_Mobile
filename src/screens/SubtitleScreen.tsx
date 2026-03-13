@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   FlatList,
   Image,
   Platform,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -19,10 +21,10 @@ import {useTheme} from '../theme/ThemeContext';
 import GradientButton from '../components/GradientButton';
 import CustomDialog from '../components/CustomDialog';
 import {config} from '../utils/config';
+import api from '../services/api';
 import {useAppDispatch, useAppSelector} from '../store/hooks';
 import {
   addPendingJob,
-  fetchVideoGallery,
   VideoGalleryItem,
 } from '../store/slices/videoNotificationSlice';
 import {fetchCoinBalance} from '../store/slices/authSlice';
@@ -88,9 +90,6 @@ const SubtitleScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const dispatch = useAppDispatch();
   const accessToken = useAppSelector(state => state.auth.accessToken);
-  const galleryVideos = useAppSelector(
-    state => state.videoNotification.galleryVideos,
-  );
 
   // Video source
   const [videoFile, setVideoFile] = useState<{
@@ -102,6 +101,10 @@ const SubtitleScreen: React.FC = () => {
   const [galleryVideoUrl, setGalleryVideoUrl] = useState<string | null>(null);
   const [galleryVideoName, setGalleryVideoName] = useState<string | null>(null);
   const [showGalleryPicker, setShowGalleryPicker] = useState(false);
+
+  // Local completed videos for subtitle picker
+  const [completedVideos, setCompletedVideos] = useState<VideoGalleryItem[]>([]);
+  const [isLoadingCompleted, setIsLoadingCompleted] = useState(false);
 
   // Font settings
   const [selectedFont, setSelectedFont] = useState(FONTS[0]);
@@ -123,6 +126,10 @@ const SubtitleScreen: React.FC = () => {
     message: string;
     type: 'error' | 'success';
   }>({visible: false, title: '', message: '', type: 'error'});
+
+  // Style sidebar
+  const [styleSidebarVisible, setStyleSidebarVisible] = useState(false);
+  const sidebarPan = useRef(new Animated.Value(0)).current;
 
   const hasVideoSource = !!videoFile || !!galleryVideoId;
 
@@ -165,10 +172,43 @@ const SubtitleScreen: React.FC = () => {
     }
   };
 
-  const handleOpenGalleryPicker = () => {
-    if (galleryVideos.length === 0) {
-      dispatch(fetchVideoGallery({}));
+  const fetchCompletedVideos = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoadingCompleted(true);
+    try {
+      const raw = await api.get<any>(
+        '/api/gemini/GeminiVideo/gallery?status=Completed&pageSize=50',
+        accessToken,
+      );
+      const videos: VideoGalleryItem[] = (raw.videos ?? []).map((v: any) => ({
+        videoId: v.id,
+        videoUrl: v.fullUrl,
+        relativeUrl: v.relativeUrl,
+        fileName: v.fileName,
+        mimeType: v.mimeType,
+        fileSizeBytes: v.fileSizeBytes,
+        durationSeconds: v.durationSeconds,
+        createdAt: v.createdAt,
+        status: v.status,
+        prompt: v.prompt,
+        aspectRatio: v.aspectRatio,
+        generationType: v.generationType,
+        templateId: v.templateId,
+        errorMessage: v.errorMessage,
+        sourcePhotoUrl: v.sourcePhotoUrl,
+        thumbnailUrl: v.thumbnailUrl,
+        isPlayed: v.hasBeenPlayed ?? false,
+      }));
+      setCompletedVideos(videos);
+    } catch (error) {
+      console.error('Failed to fetch completed videos:', error);
+    } finally {
+      setIsLoadingCompleted(false);
     }
+  }, [accessToken]);
+
+  const handleOpenGalleryPicker = () => {
+    fetchCompletedVideos();
     setShowGalleryPicker(true);
   };
 
@@ -199,8 +239,8 @@ const SubtitleScreen: React.FC = () => {
           name: videoFile.fileName,
         } as any);
       } else if (galleryVideoId && galleryVideoUrl) {
-        // MiagiShot gallery: send the URL
-        formData.append('videoUrl', galleryVideoUrl);
+        // MagiShot gallery: send the video ID
+        formData.append('videoId', galleryVideoId);
       }
 
       // Font settings
@@ -291,8 +331,259 @@ const SubtitleScreen: React.FC = () => {
     return date.toLocaleDateString();
   };
 
+  const isLightColor = (hex: string) => {
+    const c = hex.replace('#', '');
+    const r = parseInt(c.substring(0, 2), 16);
+    const g = parseInt(c.substring(2, 4), 16);
+    const b = parseInt(c.substring(4, 6), 16);
+    return (r * 299 + g * 587 + b * 114) / 1000 > 186;
+  };
+
+  const closeStyleSidebar = () => {
+    Animated.timing(sidebarPan, {
+      toValue: 300,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setStyleSidebarVisible(false);
+      sidebarPan.setValue(0);
+    });
+  };
+
+  const sidebarPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return gestureState.dx > 10 && Math.abs(gestureState.dy) < 50;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dx > 0) {
+          sidebarPan.setValue(gestureState.dx);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx > 100) {
+          closeStyleSidebar();
+        } else {
+          Animated.spring(sidebarPan, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  const renderStyleSidebar = () => (
+    <Modal
+      visible={styleSidebarVisible}
+      animationType="none"
+      transparent={true}
+      onRequestClose={closeStyleSidebar}>
+      <View style={styles.sidebarOverlay}>
+        <TouchableOpacity
+          style={styles.sidebarBackdrop}
+          activeOpacity={1}
+          onPress={closeStyleSidebar}
+        />
+        <Animated.View
+          {...sidebarPanResponder.panHandlers}
+          style={[
+            styles.sidebarContainer,
+            {
+              backgroundColor: colors.backgroundSecondary,
+              transform: [{translateX: sidebarPan}],
+            },
+          ]}>
+          {/* Swipe indicator */}
+          <View style={styles.swipeIndicator}>
+            <View style={[styles.swipeBar, {backgroundColor: colors.textTertiary}]} />
+          </View>
+
+          {/* Header */}
+          <View style={styles.sidebarHeader}>
+            <Text style={[styles.sidebarTitle, {color: colors.textPrimary}]}>Subtitle Style</Text>
+            <TouchableOpacity onPress={closeStyleSidebar}>
+              <Ionicons name="close" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 40}}>
+            {/* Font */}
+            <View style={styles.sidebarSection}>
+              <Text style={[styles.sidebarSectionTitle, {color: colors.textSecondary}]}>Font</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.fontOptions}>
+                  {FONTS.map(font => (
+                    <TouchableOpacity
+                      key={font.id}
+                      style={[
+                        styles.fontOption,
+                        {backgroundColor: colors.backgroundTertiary},
+                        selectedFont.id === font.id && {borderColor: colors.primary, borderWidth: 2},
+                      ]}
+                      onPress={() => setSelectedFont(font)}
+                      activeOpacity={0.7}>
+                      <Text style={[styles.fontOptionText, {fontFamily: font.family, color: colors.textPrimary}]}>
+                        Aa
+                      </Text>
+                      <Text style={[styles.fontOptionName, {color: colors.textSecondary}]}>{font.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+
+            {/* Size */}
+            <View style={styles.sidebarSection}>
+              <Text style={[styles.sidebarSectionTitle, {color: colors.textSecondary}]}>Size: {fontSize}px</Text>
+              <View style={styles.stepper}>
+                <TouchableOpacity
+                  style={[styles.stepperButton, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}]}
+                  onPress={() => setFontSize(prev => Math.max(8, prev - 2))}
+                  activeOpacity={0.7}>
+                  <Ionicons name="remove" size={20} color={colors.textPrimary} />
+                </TouchableOpacity>
+                <View style={[styles.stepperTrack, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}]}>
+                  <View style={[styles.stepperFill, {width: `${((fontSize - 8) / 64) * 100}%`, backgroundColor: colors.primary}]} />
+                </View>
+                <TouchableOpacity
+                  style={[styles.stepperButton, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}]}
+                  onPress={() => setFontSize(prev => Math.min(72, prev + 2))}
+                  activeOpacity={0.7}>
+                  <Ionicons name="add" size={20} color={colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Font Color */}
+            <View style={styles.sidebarSection}>
+              <Text style={[styles.sidebarSectionTitle, {color: colors.textSecondary}]}>Font Color</Text>
+              <View style={styles.sbColorGrid}>
+                {TEXT_COLORS.map((color, index) => (
+                  <TouchableOpacity
+                    key={`sb-font-${color}-${index}`}
+                    style={[
+                      styles.sbColorOption,
+                      {backgroundColor: color},
+                      fontColor === color && styles.sbColorOptionSelected,
+                    ]}
+                    onPress={() => setFontColor(color)}>
+                    {fontColor === color && (
+                      <Ionicons name="checkmark" size={14} color={isLightColor(color) ? '#000' : '#fff'} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Outline Color */}
+            <View style={styles.sidebarSection}>
+              <Text style={[styles.sidebarSectionTitle, {color: colors.textSecondary}]}>Outline Color</Text>
+              <View style={styles.sbColorGrid}>
+                {TEXT_COLORS.map((color, index) => (
+                  <TouchableOpacity
+                    key={`sb-outline-${color}-${index}`}
+                    style={[
+                      styles.sbColorOption,
+                      {backgroundColor: color},
+                      outlineColor === color && styles.sbColorOptionSelected,
+                    ]}
+                    onPress={() => setOutlineColor(color)}>
+                    {outlineColor === color && (
+                      <Ionicons name="checkmark" size={14} color={isLightColor(color) ? '#000' : '#fff'} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Outline Width */}
+            <View style={styles.sidebarSection}>
+              <Text style={[styles.sidebarSectionTitle, {color: colors.textSecondary}]}>Outline Width: {outlineWidth}</Text>
+              <View style={styles.stepper}>
+                <TouchableOpacity
+                  style={[styles.stepperButton, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}]}
+                  onPress={() => setOutlineWidth(prev => Math.max(0, prev - 1))}
+                  activeOpacity={0.7}>
+                  <Ionicons name="remove" size={20} color={colors.textPrimary} />
+                </TouchableOpacity>
+                <View style={[styles.stepperTrack, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}]}>
+                  <View style={[styles.stepperFill, {width: `${(outlineWidth / 10) * 100}%`, backgroundColor: colors.primary}]} />
+                </View>
+                <TouchableOpacity
+                  style={[styles.stepperButton, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}]}
+                  onPress={() => setOutlineWidth(prev => Math.min(10, prev + 1))}
+                  activeOpacity={0.7}>
+                  <Ionicons name="add" size={20} color={colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Position */}
+            <View style={styles.sidebarSection}>
+              <Text style={[styles.sidebarSectionTitle, {color: colors.textSecondary}]}>Position</Text>
+              <View style={styles.segmentedControl}>
+                {POSITIONS.map(pos => (
+                  <TouchableOpacity
+                    key={pos}
+                    style={[
+                      styles.segmentButton,
+                      {
+                        backgroundColor:
+                          position === pos
+                            ? colors.primary
+                            : isDark
+                              ? 'rgba(255,255,255,0.1)'
+                              : 'rgba(0,0,0,0.05)',
+                        borderColor:
+                          position === pos
+                            ? colors.primary
+                            : isDark
+                              ? 'rgba(255,255,255,0.2)'
+                              : 'rgba(0,0,0,0.1)',
+                      },
+                    ]}
+                    onPress={() => setPosition(pos)}
+                    activeOpacity={0.7}>
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        {color: position === pos ? '#fff' : colors.textSecondary},
+                      ]}>
+                      {pos.charAt(0).toUpperCase() + pos.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Preview */}
+            <View style={styles.sidebarSection}>
+              <Text style={[styles.sidebarSectionTitle, {color: colors.textSecondary}]}>Preview</Text>
+              <View style={[styles.sbTextPreview, {backgroundColor: '#333'}]}>
+                <Text
+                  style={{
+                    fontFamily: selectedFont.family,
+                    fontSize: Math.min(fontSize, 28),
+                    color: fontColor,
+                    textShadowColor: outlineColor,
+                    textShadowOffset: {width: outlineWidth > 0 ? 1 : 0, height: outlineWidth > 0 ? 1 : 0},
+                    textShadowRadius: outlineWidth,
+                    textAlign: 'center',
+                  }}>
+                  Sample Subtitle Text
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+
   const renderGalleryItem = ({item}: {item: VideoGalleryItem}) => {
-    const thumb = getFullUrl(item.thumbnailUrl);
+    const thumb = getFullUrl(item.sourcePhotoUrl) || getFullUrl(item.thumbnailUrl);
     return (
       <TouchableOpacity
         style={[styles.galleryGridItem, {backgroundColor: colors.backgroundTertiary}]}
@@ -466,194 +757,69 @@ const SubtitleScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Font Settings Section */}
+        {/* Text Style Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, {color: colors.textPrimary}]}>
-            Font Settings
+            Text Style
           </Text>
 
-          {/* Font Name */}
-          <Text style={[styles.settingLabel, {color: colors.textSecondary}]}>
-            Font
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.chipScroll}
-            contentContainerStyle={styles.chipContainer}>
-            {FONTS.map(font => (
-              <TouchableOpacity
-                key={font.id}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor:
-                      selectedFont.id === font.id
-                        ? colors.primary
-                        : isDark
-                          ? 'rgba(255,255,255,0.1)'
-                          : 'rgba(0,0,0,0.05)',
-                    borderColor:
-                      selectedFont.id === font.id
-                        ? colors.primary
-                        : isDark
-                          ? 'rgba(255,255,255,0.2)'
-                          : 'rgba(0,0,0,0.1)',
-                  },
-                ]}
-                onPress={() => setSelectedFont(font)}
-                activeOpacity={0.7}>
-                <Text
-                  style={[
-                    styles.chipText,
-                    {
-                      color:
-                        selectedFont.id === font.id
-                          ? '#fff'
-                          : colors.textSecondary,
-                      fontFamily: font.family,
-                    },
-                  ]}>
-                  {font.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* Font Size */}
-          <Text style={[styles.settingLabel, {color: colors.textSecondary}]}>
-            Font Size: {fontSize}
-          </Text>
-          <View style={styles.stepper}>
-            <TouchableOpacity
-              style={[styles.stepperButton, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}]}
-              onPress={() => setFontSize(prev => Math.max(8, prev - 2))}
-              activeOpacity={0.7}>
-              <Ionicons name="remove" size={20} color={colors.textPrimary} />
-            </TouchableOpacity>
-            <View style={[styles.stepperTrack, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}]}>
-              <View style={[styles.stepperFill, {width: `${((fontSize - 8) / 64) * 100}%`, backgroundColor: colors.primary}]} />
+          {/* Compact summary row */}
+          <View style={[styles.styleSummaryRow, {backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}]}>
+            <View style={styles.styleSummaryInfo}>
+              <Text style={[{color: colors.textPrimary, fontSize: 14, fontWeight: '600', fontFamily: selectedFont.family}]}>
+                {selectedFont.name}
+              </Text>
+              <Text style={[{color: colors.textSecondary, fontSize: 12, marginTop: 2}]}>
+                {fontSize}px
+              </Text>
+            </View>
+            <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+              <View style={{width: 20, height: 20, borderRadius: 10, backgroundColor: fontColor, borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'}} />
+              <View style={{width: 20, height: 20, borderRadius: 10, backgroundColor: outlineColor, borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'}} />
             </View>
             <TouchableOpacity
-              style={[styles.stepperButton, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}]}
-              onPress={() => setFontSize(prev => Math.min(72, prev + 2))}
+              style={[styles.styleButton, {backgroundColor: colors.primary}]}
+              onPress={() => setStyleSidebarVisible(true)}
               activeOpacity={0.7}>
-              <Ionicons name="add" size={20} color={colors.textPrimary} />
+              <Ionicons name="color-palette-outline" size={16} color="#fff" />
+              <Text style={{color: '#fff', fontSize: 13, fontWeight: '600', marginLeft: 6}}>Style</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Font Color */}
-          <Text style={[styles.settingLabel, {color: colors.textSecondary}]}>
-            Font Color
-          </Text>
-          <View style={styles.colorGrid}>
-            {TEXT_COLORS.map(color => (
-              <TouchableOpacity
-                key={`font-${color}`}
-                style={[
-                  styles.colorSwatch,
-                  {
-                    backgroundColor: color,
-                    borderColor:
-                      fontColor === color
-                        ? colors.primary
-                        : isDark
-                          ? 'rgba(255,255,255,0.2)'
-                          : 'rgba(0,0,0,0.15)',
-                    borderWidth: fontColor === color ? 3 : 1,
-                  },
-                ]}
-                onPress={() => setFontColor(color)}
-              />
-            ))}
-          </View>
-
-          {/* Outline Color */}
-          <Text style={[styles.settingLabel, {color: colors.textSecondary}]}>
-            Outline Color
-          </Text>
-          <View style={styles.colorGrid}>
-            {TEXT_COLORS.map(color => (
-              <TouchableOpacity
-                key={`outline-${color}`}
-                style={[
-                  styles.colorSwatch,
-                  {
-                    backgroundColor: color,
-                    borderColor:
-                      outlineColor === color
-                        ? colors.primary
-                        : isDark
-                          ? 'rgba(255,255,255,0.2)'
-                          : 'rgba(0,0,0,0.15)',
-                    borderWidth: outlineColor === color ? 3 : 1,
-                  },
-                ]}
-                onPress={() => setOutlineColor(color)}
-              />
-            ))}
-          </View>
-
-          {/* Outline Width */}
-          <Text style={[styles.settingLabel, {color: colors.textSecondary}]}>
-            Outline Width: {outlineWidth}
-          </Text>
-          <View style={styles.stepper}>
-            <TouchableOpacity
-              style={[styles.stepperButton, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}]}
-              onPress={() => setOutlineWidth(prev => Math.max(0, prev - 1))}
-              activeOpacity={0.7}>
-              <Ionicons name="remove" size={20} color={colors.textPrimary} />
-            </TouchableOpacity>
-            <View style={[styles.stepperTrack, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}]}>
-              <View style={[styles.stepperFill, {width: `${(outlineWidth / 10) * 100}%`, backgroundColor: colors.primary}]} />
-            </View>
-            <TouchableOpacity
-              style={[styles.stepperButton, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}]}
-              onPress={() => setOutlineWidth(prev => Math.min(10, prev + 1))}
-              activeOpacity={0.7}>
-              <Ionicons name="add" size={20} color={colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Position */}
-          <Text style={[styles.settingLabel, {color: colors.textSecondary}]}>
-            Position
-          </Text>
-          <View style={styles.segmentedControl}>
-            {POSITIONS.map(pos => (
-              <TouchableOpacity
-                key={pos}
-                style={[
-                  styles.segmentButton,
-                  {
-                    backgroundColor:
-                      position === pos
-                        ? colors.primary
-                        : isDark
-                          ? 'rgba(255,255,255,0.1)'
-                          : 'rgba(0,0,0,0.05)',
-                    borderColor:
-                      position === pos
-                        ? colors.primary
-                        : isDark
-                          ? 'rgba(255,255,255,0.2)'
-                          : 'rgba(0,0,0,0.1)',
-                  },
-                ]}
-                onPress={() => setPosition(pos)}
-                activeOpacity={0.7}>
-                <Text
-                  style={[
-                    styles.segmentText,
-                    {
-                      color: position === pos ? '#fff' : colors.textSecondary,
-                    },
-                  ]}>
-                  {pos.charAt(0).toUpperCase() + pos.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          {/* Compact preview */}
+          <View
+            style={[
+              styles.previewBox,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255,255,255,0.05)'
+                  : 'rgba(0,0,0,0.03)',
+                borderColor: isDark
+                  ? 'rgba(255,255,255,0.1)'
+                  : 'rgba(0,0,0,0.08)',
+                justifyContent:
+                  position === 'top'
+                    ? 'flex-start'
+                    : position === 'center'
+                      ? 'center'
+                      : 'flex-end',
+                marginTop: 12,
+              },
+            ]}>
+            <Text
+              style={[
+                styles.previewText,
+                {
+                  fontFamily: selectedFont.family,
+                  fontSize: Math.min(fontSize, 36),
+                  color: fontColor,
+                  textShadowColor: outlineColor,
+                  textShadowOffset: {width: outlineWidth > 0 ? 1 : 0, height: outlineWidth > 0 ? 1 : 0},
+                  textShadowRadius: outlineWidth,
+                },
+              ]}>
+              Sample Subtitle Text
+            </Text>
           </View>
         </View>
 
@@ -754,46 +920,6 @@ const SubtitleScreen: React.FC = () => {
           </ScrollView>
         </View>
 
-        {/* Subtitle Preview */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, {color: colors.textPrimary}]}>
-            Preview
-          </Text>
-          <View
-            style={[
-              styles.previewBox,
-              {
-                backgroundColor: isDark
-                  ? 'rgba(255,255,255,0.05)'
-                  : 'rgba(0,0,0,0.03)',
-                borderColor: isDark
-                  ? 'rgba(255,255,255,0.1)'
-                  : 'rgba(0,0,0,0.08)',
-                justifyContent:
-                  position === 'top'
-                    ? 'flex-start'
-                    : position === 'center'
-                      ? 'center'
-                      : 'flex-end',
-              },
-            ]}>
-            <Text
-              style={[
-                styles.previewText,
-                {
-                  fontFamily: selectedFont.family,
-                  fontSize: Math.min(fontSize, 36),
-                  color: fontColor,
-                  textShadowColor: outlineColor,
-                  textShadowOffset: {width: outlineWidth > 0 ? 1 : 0, height: outlineWidth > 0 ? 1 : 0},
-                  textShadowRadius: outlineWidth,
-                },
-              ]}>
-              Sample Subtitle Text
-            </Text>
-          </View>
-        </View>
-
         {/* Submit Button */}
         <View style={styles.buttonSection}>
           <GradientButton
@@ -840,7 +966,7 @@ const SubtitleScreen: React.FC = () => {
                 />
               </TouchableOpacity>
             </View>
-            {galleryVideos.length === 0 ? (
+            {isLoadingCompleted ? (
               <View style={styles.emptyGallery}>
                 <ActivityIndicator size="large" color={colors.primary} />
                 <Text
@@ -851,9 +977,20 @@ const SubtitleScreen: React.FC = () => {
                   Loading videos...
                 </Text>
               </View>
+            ) : completedVideos.length === 0 ? (
+              <View style={styles.emptyGallery}>
+                <Ionicons name="videocam-off-outline" size={48} color={colors.textTertiary} />
+                <Text
+                  style={[
+                    styles.emptyGalleryText,
+                    {color: colors.textSecondary},
+                  ]}>
+                  No completed videos yet
+                </Text>
+              </View>
             ) : (
               <FlatList
-                data={galleryVideos}
+                data={completedVideos}
                 keyExtractor={item => item.videoId}
                 renderItem={renderGalleryItem}
                 numColumns={3}
@@ -865,6 +1002,9 @@ const SubtitleScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Style Sidebar */}
+      {renderStyleSidebar()}
 
       {/* Success / Error Dialog */}
       <CustomDialog
@@ -1001,11 +1141,6 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
-  colorSwatch: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-  },
   segmentedControl: {
     flexDirection: 'row',
     gap: 10,
@@ -1102,6 +1237,121 @@ const styles = StyleSheet.create({
   },
   emptyGalleryText: {
     fontSize: 14,
+  },
+  // Style summary row
+  styleSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+  },
+  styleSummaryInfo: {
+    flex: 1,
+  },
+  styleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  // Sidebar
+  sidebarOverlay: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  sidebarBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  sidebarContainer: {
+    width: 280,
+    height: '100%',
+    paddingTop: 50,
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: {width: -4, height: 0},
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  sidebarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 16,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(128, 128, 128, 0.2)',
+  },
+  sidebarTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  sidebarSection: {
+    marginBottom: 24,
+  },
+  sidebarSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  fontOptions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  fontOption: {
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    minWidth: 70,
+  },
+  fontOptionText: {
+    fontSize: 22,
+    marginBottom: 4,
+  },
+  fontOptionName: {
+    fontSize: 10,
+  },
+  sbColorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  sbColorOption: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  sbColorOptionSelected: {
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  sbTextPreview: {
+    padding: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 80,
+  },
+  swipeIndicator: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  swipeBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
   },
 });
 

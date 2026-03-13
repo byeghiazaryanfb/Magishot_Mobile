@@ -134,6 +134,7 @@ const PhotoPickerModal: React.FC<PhotoPickerModalProps> = ({
         maxWidth: 1920,
         maxHeight: 1920,
         includeBase64: false,
+        presentationStyle: 'fullScreen',
       });
 
       if (result.didCancel || !result.assets?.[0]?.uri) {
@@ -255,8 +256,9 @@ const PhotoPickerModal: React.FC<PhotoPickerModalProps> = ({
           e.stopPropagation();
           handleRemoveFromHistory(item);
         }}
+        hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
         activeOpacity={0.8}>
-        <Text style={styles.removePhotoButtonText}>x</Text>
+        <Ionicons name="close" size={18} color="#fff" />
       </TouchableOpacity>
     </TouchableOpacity>
   );
@@ -280,7 +282,8 @@ const PhotoPickerModal: React.FC<PhotoPickerModalProps> = ({
             </Text>
             <TouchableOpacity
               style={[styles.closeButton, {backgroundColor: colors.backgroundTertiary}]}
-              onPress={onClose}>
+              onPress={onClose}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
               <Text style={[styles.closeButtonText, {color: colors.textPrimary}]}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -372,9 +375,9 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'absolute',
     right: 16,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -438,18 +441,13 @@ const styles = StyleSheet.create({
   },
   removePhotoButton: {
     position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    top: 6,
+    right: 6,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  removePhotoButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   emptyContainer: {
     flex: 1,

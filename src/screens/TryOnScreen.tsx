@@ -5,6 +5,7 @@ import {useCopilot} from 'react-native-copilot';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useTheme} from '../theme/ThemeContext';
 import {useAppDispatch, useAppSelector} from '../store/hooks';
+import {toggleBusinessMode} from '../store/slices/appSlice';
 import {setProductImage, setProductImageUrl, setSelectedProduct} from '../store/slices/tryOnSlice';
 import {useWalkthrough, WALKTHROUGH_KEYS} from '../hooks/useWalkthrough';
 import TryOnArea from '../components/TryOnArea';
@@ -18,6 +19,7 @@ const TryOnScreen: React.FC = () => {
   const dispatch = useAppDispatch();
   const {unopenedPhotosCount, unplayedVideosCount} = useAppSelector(state => state.app);
   const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount;
+  const notificationUnreadCount = useAppSelector(state => state.notification.unreadCount);
   const openDrawer = () => {
     navigation.dispatch(DrawerActions.openDrawer());
   };
@@ -92,46 +94,70 @@ const TryOnScreen: React.FC = () => {
             paddingHorizontal: headerPadding,
           },
         ]}>
-        <TouchableOpacity
-          style={[
-            styles.menuButton,
-            {
-              backgroundColor: colors.backgroundTertiary,
-              width: themeToggleSize,
-              height: themeToggleSize,
-              borderRadius: themeToggleSize / 2,
-            },
-          ]}
-          onPress={openDrawer}
-          activeOpacity={0.7}>
-          <Ionicons name="menu" size={themeIconSize} color={colors.textPrimary} />
-        </TouchableOpacity>
-
-        <View style={styles.logoContainer}>
-          <Logo size={isTablet ? 160 : 120} />
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={openDrawer}
+            activeOpacity={0.7}>
+            <Ionicons name="menu" size={themeIconSize} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Logo size={isTablet ? 140 : 100} />
         </View>
 
-        <TouchableOpacity
-          style={[
-            styles.headerButton,
-            {
-              backgroundColor: colors.backgroundTertiary,
-              width: themeToggleSize,
-              height: themeToggleSize,
-              borderRadius: themeToggleSize / 2,
-            },
-          ]}
-          onPress={() => (navigation as any).navigate('MyCreations')}
-          activeOpacity={0.7}>
-          <Ionicons name="images" size={themeIconSize} color={colors.textPrimary} />
-          {totalUnreadCount > 0 && (
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>
-                {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: colors.backgroundTertiary,
+                width: themeToggleSize,
+                height: themeToggleSize,
+                borderRadius: themeToggleSize / 2,
+              },
+            ]}
+            onPress={() => dispatch(toggleBusinessMode())}
+            activeOpacity={0.7}>
+            <Ionicons name="briefcase-outline" size={themeIconSize} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: colors.backgroundTertiary,
+                width: themeToggleSize,
+                height: themeToggleSize,
+                borderRadius: themeToggleSize / 2,
+              },
+            ]}
+            onPress={() => (navigation as any).navigate('Notifications')}
+            activeOpacity={0.7}>
+            <Ionicons name="notifications" size={themeIconSize} color={colors.textPrimary} />
+            {notificationUnreadCount > 0 && (
+              <View style={styles.bellDot} />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: colors.backgroundTertiary,
+                width: themeToggleSize,
+                height: themeToggleSize,
+                borderRadius: themeToggleSize / 2,
+              },
+            ]}
+            onPress={() => (navigation as any).navigate('MyCreations')}
+            activeOpacity={0.7}>
+            <Ionicons name="images" size={themeIconSize} color={colors.textPrimary} />
+            {totalUnreadCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
       <TryOnArea />
       <TryOnResultModal />
@@ -154,17 +180,34 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   menuButton: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logoContainer: {
-    flex: 1,
+  headerRight: {
+    flexDirection: 'row',
+    gap: 8,
     alignItems: 'center',
   },
   headerButton: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  bellDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF4757',
+    borderWidth: 1.5,
+    borderColor: '#fff',
   },
   notificationBadge: {
     position: 'absolute',

@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect, useMemo} from 'react';
+import React, {useState, useRef, useEffect, useMemo, useImperativeHandle, forwardRef} from 'react';
 import {
   View,
   Text,
@@ -47,15 +47,19 @@ const findItemById = (id: string, items: SynthesizeAction[]): SynthesizeAction |
   return null;
 };
 
+export interface ActionsBarRef {
+  collapse: () => void;
+}
+
 interface ActionsBarProps {
   selectedAction: SynthesizeAction | null;
   onSelectAction: (action: SynthesizeAction | null) => void;
 }
 
-const ActionsBar: React.FC<ActionsBarProps> = ({
+const ActionsBar = forwardRef<ActionsBarRef, ActionsBarProps>(({
   selectedAction,
   onSelectAction,
-}) => {
+}, ref) => {
   const {colors} = useTheme();
   const {width, height} = useWindowDimensions();
   const isSmallPhone = height < 700;
@@ -92,6 +96,8 @@ const ActionsBar: React.FC<ActionsBarProps> = ({
     }).start();
     setIsExpanded(false);
   };
+
+  useImperativeHandle(ref, () => ({collapse: collapseIcons}));
 
   // Expand animation function
   const expandIcons = () => {
@@ -195,6 +201,7 @@ const ActionsBar: React.FC<ActionsBarProps> = ({
   };
 
   const closeModal = () => {
+    setPeekItem(null);
     setModalVisible(false);
     setSelectedCategory(null);
     setSelectedSubCategory(null);
@@ -295,14 +302,20 @@ const ActionsBar: React.FC<ActionsBarProps> = ({
   });
 
   return (
-    <View style={[
-      styles.container,
-      {
-        backgroundColor: colors.backgroundSecondary,
-        paddingVertical: isSmallPhone ? 4 : 6,
-        minHeight: isSmallPhone ? 46 : 52,
-      }
-    ]}>
+    <Pressable
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.backgroundSecondary,
+          paddingVertical: isSmallPhone ? 4 : 6,
+          minHeight: isSmallPhone ? 46 : 52,
+        },
+      ]}
+      onPress={() => {
+        if (isExpanded) {
+          collapseIcons();
+        }
+      }}>
       {/* Stacked/Expandable Action Icons */}
       <View style={styles.stackTouchable}>
         <Animated.View
@@ -338,6 +351,7 @@ const ActionsBar: React.FC<ActionsBarProps> = ({
                     triggerHaptic();
                     if (isExpanded) {
                       toggleActionSelection(item);
+                      collapseIcons();
                     } else {
                       toggleExpand();
                     }
@@ -382,11 +396,11 @@ const ActionsBar: React.FC<ActionsBarProps> = ({
                   outputRange: [stackedWidth - 10, previewActions.length * (iconSize + 8)],
                 }),
               },
-            ]}>
+            ]}
+            onStartShouldSetResponder={() => true}>
             <TouchableOpacity
               style={styles.moreButtonTouchable}
               onPress={() => {
-                collapseIcons();
                 setModalVisible(true);
               }}
               activeOpacity={0.8}>
@@ -417,7 +431,8 @@ const ActionsBar: React.FC<ActionsBarProps> = ({
           )}
           <Pressable
             style={[styles.removeButton, {backgroundColor: colors.error}]}
-            onPress={handleRemoveAction}>
+            onPress={handleRemoveAction}
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
             <Text style={styles.removeButtonText}>×</Text>
           </Pressable>
         </View>
@@ -443,7 +458,8 @@ const ActionsBar: React.FC<ActionsBarProps> = ({
               )}
               <TouchableOpacity
                 style={[styles.closeButton, {backgroundColor: colors.backgroundTertiary}]}
-                onPress={closeModal}>
+                onPress={closeModal}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
                 <Text style={[styles.closeButtonText, {color: colors.textPrimary}]}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -483,39 +499,64 @@ const ActionsBar: React.FC<ActionsBarProps> = ({
 
           </View>
         </View>
-      </Modal>
 
-      {/* Peek Preview - works from both studio tab and modal */}
-      <Modal
-        visible={!!peekItem}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPeekItem(null)}>
-        <View
-          style={styles.peekOverlay}
-          onTouchEnd={() => setPeekItem(null)}
-          onTouchCancel={() => setPeekItem(null)}>
-          <View style={[styles.peekContainer, {backgroundColor: colors.cardBackground}]}>
-            {peekItem && getFullImageUrl(peekItem.imageUrl) ? (
-              <Image
-                source={{uri: getFullImageUrl(peekItem.imageUrl)!}}
-                style={styles.peekImage}
-                resizeMode="contain"
-              />
-            ) : peekItem ? (
-              <Text style={styles.peekEmoji}>{peekItem.icon}</Text>
-            ) : null}
-            {peekItem && (
+        {/* Peek Preview inside modal - rendered here to appear on top of modal content */}
+        {!!peekItem && (
+          <View
+            style={styles.peekOverlay}
+            onTouchEnd={() => setPeekItem(null)}
+            onTouchCancel={() => setPeekItem(null)}>
+            <View style={[styles.peekContainer, {backgroundColor: colors.cardBackground}]}>
+              {getFullImageUrl(peekItem.imageUrl) ? (
+                <Image
+                  source={{uri: getFullImageUrl(peekItem.imageUrl)!}}
+                  style={styles.peekImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Text style={styles.peekEmoji}>{peekItem.icon}</Text>
+              )}
               <Text style={[styles.peekLabel, {color: colors.textPrimary}]}>
                 {peekItem.label}
               </Text>
-            )}
+            </View>
           </View>
-        </View>
+        )}
       </Modal>
-    </View>
+
+      {/* Peek Preview - for studio tab long-press (when modal is closed) */}
+      {!!peekItem && !modalVisible && (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPeekItem(null)}>
+          <View
+            style={styles.peekOverlay}
+            onTouchEnd={() => setPeekItem(null)}
+            onTouchCancel={() => setPeekItem(null)}>
+            <View style={[styles.peekContainer, {backgroundColor: colors.cardBackground}]}>
+              {getFullImageUrl(peekItem.imageUrl) ? (
+                <Image
+                  source={{uri: getFullImageUrl(peekItem.imageUrl)!}}
+                  style={styles.peekImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Text style={styles.peekEmoji}>{peekItem.icon}</Text>
+              )}
+              <Text style={[styles.peekLabel, {color: colors.textPrimary}]}>
+                {peekItem.label}
+              </Text>
+            </View>
+          </View>
+        </Modal>
+      )}
+    </Pressable>
   );
-};
+});
+
+ActionsBar.displayName = 'ActionsBar';
 
 const styles = StyleSheet.create({
   container: {
@@ -623,15 +664,15 @@ const styles = StyleSheet.create({
     maxWidth: 120,
   },
   removeButton: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
   },
   removeButtonText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     marginTop: -1,
   },
@@ -671,14 +712,14 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'absolute',
     right: 16,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeButtonText: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '600',
   },
   breadcrumbContainer: {

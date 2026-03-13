@@ -5,6 +5,7 @@ export interface UserPhoto {
   id: string;
   relativeUrl: string;
   fullUrl: string;
+  thumbnailFullUrl: string | null;
   originalImageRelativeUrl: string | null;
   originalImageFullUrl: string | null;
   fileName: string;

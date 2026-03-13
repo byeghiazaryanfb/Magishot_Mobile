@@ -5,6 +5,8 @@ import {
   StyleSheet,
   ViewStyle,
   TextStyle,
+  ActivityIndicator,
+  View,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import {useTheme} from '../theme/ThemeContext';
@@ -13,6 +15,7 @@ interface GradientButtonProps {
   title: string;
   onPress: () => void;
   disabled?: boolean;
+  loading?: boolean;
   style?: ViewStyle;
   textStyle?: TextStyle;
   colors?: string[];
@@ -22,11 +25,14 @@ const GradientButton: React.FC<GradientButtonProps> = ({
   title,
   onPress,
   disabled = false,
+  loading = false,
   style,
   textStyle,
   colors,
 }) => {
   const {colors: themeColors} = useTheme();
+
+  const isDisabled = disabled || loading;
 
   const gradientColors = colors || [
     themeColors.gradientStart,
@@ -34,19 +40,28 @@ const GradientButton: React.FC<GradientButtonProps> = ({
   ];
 
   return (
-    <LinearGradient
-      colors={disabled ? ['#666', '#444'] : gradientColors}
-      start={{x: 0, y: 0}}
-      end={{x: 1, y: 0}}
-      style={[styles.container, style, disabled && styles.disabled]}>
-      <TouchableOpacity
-        style={styles.touchable}
-        onPress={onPress}
-        disabled={disabled}
-        activeOpacity={0.9}>
-        <Text style={[styles.text, textStyle]}>{title}</Text>
-      </TouchableOpacity>
-    </LinearGradient>
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={isDisabled}
+      activeOpacity={0.7}
+      style={[style]}>
+      <LinearGradient
+        colors={disabled && !loading ? ['#666', '#444'] : gradientColors}
+        start={{x: 0, y: 0}}
+        end={{x: 1, y: 0}}
+        style={[styles.container, disabled && !loading && styles.disabled, loading && styles.loading]}>
+        <View style={styles.touchable}>
+          {loading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={[styles.text, textStyle]}>{title}</Text>
+            </View>
+          ) : (
+            <Text style={[styles.text, textStyle]}>{title}</Text>
+          )}
+        </View>
+      </LinearGradient>
+    </TouchableOpacity>
   );
 };
 
@@ -73,6 +88,14 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.6,
     shadowOpacity: 0,
+  },
+  loading: {
+    shadowOpacity: 0,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
 });
 

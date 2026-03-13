@@ -1,17 +1,17 @@
-import React, {useState, useRef} from 'react';
+import React, {useState, useCallback} from 'react';
 import {
   Modal,
   View,
-  Image,
   TouchableOpacity,
   StyleSheet,
   StatusBar,
   Dimensions,
   Text,
-  Animated,
-  PanResponder,
 } from 'react-native';
+import FastImage from 'react-native-fast-image';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import {ImageZoom} from '@likashefqet/react-native-image-zoom';
 
 interface FullScreenImageModalProps {
   visible: boolean;
@@ -29,97 +29,11 @@ const FullScreenImageModal: React.FC<FullScreenImageModalProps> = ({
   onClose,
 }) => {
   const [showBefore, setShowBefore] = useState(false);
+  const [isZoomed, setIsZoomed] = useState(false);
 
-  // Zoom state
-  const scale = useRef(new Animated.Value(1)).current;
-  const translateX = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(0)).current;
-  const lastScale = useRef(1);
-  const lastTranslateX = useRef(0);
-  const lastTranslateY = useRef(0);
-  const lastTap = useRef(0);
-
-  // Reset zoom when modal closes or image changes
-  React.useEffect(() => {
-    if (!visible) {
-      resetZoom();
-    }
-  }, [visible, imageUri]);
-
-  const resetZoom = () => {
-    Animated.parallel([
-      Animated.spring(scale, {toValue: 1, useNativeDriver: true}),
-      Animated.spring(translateX, {toValue: 0, useNativeDriver: true}),
-      Animated.spring(translateY, {toValue: 0, useNativeDriver: true}),
-    ]).start();
-    lastScale.current = 1;
-    lastTranslateX.current = 0;
-    lastTranslateY.current = 0;
-  };
-
-  const handleDoubleTap = () => {
-    const now = Date.now();
-    if (now - lastTap.current < 300) {
-      // Double tap detected
-      if (lastScale.current > 1) {
-        // Zoom out
-        resetZoom();
-      } else {
-        // Zoom in to 2.5x
-        Animated.parallel([
-          Animated.spring(scale, {toValue: 2.5, useNativeDriver: true}),
-        ]).start();
-        lastScale.current = 2.5;
-      }
-    }
-    lastTap.current = now;
-  };
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        // Allow pan when zoomed in or when there are 2 fingers
-        return lastScale.current > 1 || gestureState.numberActiveTouches === 2;
-      },
-      onPanResponderGrant: () => {
-        handleDoubleTap();
-      },
-      onPanResponderMove: (_, gestureState) => {
-        if (gestureState.numberActiveTouches === 2) {
-          // Pinch to zoom
-          const distance = Math.sqrt(
-            Math.pow(gestureState.dx, 2) + Math.pow(gestureState.dy, 2)
-          );
-          const newScale = Math.max(1, Math.min(lastScale.current + distance / 300, 5));
-          scale.setValue(newScale);
-        } else if (lastScale.current > 1) {
-          // Pan when zoomed
-          const newX = lastTranslateX.current + gestureState.dx;
-          const newY = lastTranslateY.current + gestureState.dy;
-          translateX.setValue(newX);
-          translateY.setValue(newY);
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        // Save current values
-        scale.addListener(({value}) => {
-          lastScale.current = value;
-        });
-        translateX.addListener(({value}) => {
-          lastTranslateX.current = value;
-        });
-        translateY.addListener(({value}) => {
-          lastTranslateY.current = value;
-        });
-
-        // Snap back if scale is less than 1
-        if (lastScale.current < 1) {
-          resetZoom();
-        }
-      },
-    })
-  ).current;
+  const handleZoomChange = useCallback((zoomType: string) => {
+    setIsZoomed(zoomType !== 'zoomOut');
+  }, []);
 
   if (!imageUri) {
     return null;
@@ -135,57 +49,54 @@ const FullScreenImageModal: React.FC<FullScreenImageModalProps> = ({
       statusBarTranslucent
       onRequestClose={onClose}>
       <StatusBar backgroundColor="rgba(0,0,0,0.95)" barStyle="light-content" />
-      <View style={styles.container}>
+      <GestureHandlerRootView style={styles.container}>
         <TouchableOpacity
           style={styles.closeButton}
           onPress={onClose}
+          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
           activeOpacity={0.7}>
           <Ionicons name="close" size={28} color="#fff" />
         </TouchableOpacity>
 
         {/* Zoom hint */}
-        <View style={styles.zoomHint}>
-          <Ionicons name="search-outline" size={14} color="rgba(255,255,255,0.6)" />
-          <Text style={styles.zoomHintText}>Pinch or double-tap to zoom</Text>
-        </View>
-
-        {/* Reset zoom button */}
-        {lastScale.current > 1 && (
-          <TouchableOpacity
-            style={styles.resetButton}
-            onPress={resetZoom}
-            activeOpacity={0.7}>
-            <Ionicons name="contract-outline" size={20} color="#fff" />
-          </TouchableOpacity>
+        {!isZoomed && (
+          <View style={styles.zoomHint}>
+            <Ionicons name="search-outline" size={14} color="rgba(255,255,255,0.6)" />
+            <Text style={styles.zoomHintText}>Pinch or double-tap to zoom</Text>
+          </View>
         )}
 
         {/* Main image with zoom */}
-        <Animated.View
-          {...panResponder.panHandlers}
-          style={[
-            styles.imageContainer,
-            {
-              transform: [
-                {scale: scale},
-                {translateX: translateX},
-                {translateY: translateY},
-              ],
-            },
-          ]}>
-          <Image
-            source={{uri: imageUri}}
-            style={styles.image}
-            resizeMode="contain"
-          />
-        </Animated.View>
+        <ImageZoom
+          uri={imageUri}
+          minScale={1}
+          maxScale={5}
+          doubleTapScale={2.5}
+          minPanPointers={1}
+          maxPanPointers={2}
+          isPanEnabled={true}
+          isPinchEnabled={true}
+          isDoubleTapEnabled={true}
+          onInteractionStart={() => setIsZoomed(true)}
+          onPinchEnd={(event) => {
+            if (event.scale <= 1.05) {
+              setIsZoomed(false);
+            }
+          }}
+          onDoubleTap={(event) => {
+            handleZoomChange(event.type);
+          }}
+          style={styles.imageZoom}
+          resizeMode="contain"
+        />
 
         {/* Before image overlay */}
         {showBefore && beforeImageUri && (
           <View style={styles.beforeOverlay}>
-            <Image
-              source={{uri: beforeImageUri}}
-              style={styles.image}
-              resizeMode="contain"
+            <FastImage
+              source={{uri: beforeImageUri, priority: FastImage.priority.high, cache: FastImage.cacheControl.immutable}}
+              style={styles.beforeImage}
+              resizeMode={FastImage.resizeMode.contain}
             />
             <View style={styles.labelContainer}>
               <View style={styles.labelBadge}>
@@ -195,7 +106,7 @@ const FullScreenImageModal: React.FC<FullScreenImageModalProps> = ({
           </View>
         )}
 
-        {/* Compare button - press and hold to see before */}
+        {/* Compare button */}
         {hasComparison && (
           <TouchableOpacity
             style={styles.compareButton}
@@ -206,7 +117,7 @@ const FullScreenImageModal: React.FC<FullScreenImageModalProps> = ({
             <Text style={styles.compareText}>Hold to compare</Text>
           </TouchableOpacity>
         )}
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 };
@@ -245,25 +156,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
     fontSize: 12,
   },
-  resetButton: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  imageContainer: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT * 0.8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  image: {
+  imageZoom: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT * 0.8,
   },
@@ -276,6 +169,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 5,
+  },
+  beforeImage: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT * 0.8,
   },
   labelContainer: {
     position: 'absolute',

@@ -50,6 +50,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import type {SkImage} from '@shopify/react-native-skia';
 import {useTheme} from '../theme/ThemeContext';
 import {useAppDispatch} from '../store/hooks';
+import {toggleBusinessMode} from '../store/slices/appSlice';
 import {fetchCoinBalance} from '../store/slices/authSlice';
 import {addToHistory} from '../store/slices/historySlice';
 import Logo from '../components/Logo';
@@ -130,6 +131,7 @@ const EditScreen: React.FC = () => {
   const accessToken = useSelector((state: RootState) => state.auth.accessToken);
   const {unopenedPhotosCount, unplayedVideosCount} = useSelector((state: RootState) => state.app);
   const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount;
+  const notificationUnreadCount = useSelector((state: RootState) => state.notification.unreadCount);
   const {captionPrice} = useServicePrices();
 
   // Walkthrough for Edit tab
@@ -861,6 +863,7 @@ const EditScreen: React.FC = () => {
     const result = await launchCamera({
       mediaType: 'photo',
       quality: 1,
+      presentationStyle: 'fullScreen',
     });
 
     if (result.assets && result.assets[0]?.uri) {
@@ -2966,44 +2969,69 @@ const EditScreen: React.FC = () => {
             paddingHorizontal: headerPadding,
           },
         ]}>
-        <TouchableOpacity
-          style={[
-            styles.menuButton,
-            {
-              backgroundColor: colors.backgroundTertiary,
-              width: themeToggleSize,
-              height: themeToggleSize,
-              borderRadius: themeToggleSize / 2,
-            },
-          ]}
-          onPress={openDrawer}
-          activeOpacity={0.7}>
-          <Ionicons name="menu" size={themeIconSize} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <View style={styles.logoContainer}>
-          <Logo size={isTablet ? 160 : 120} />
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={openDrawer}
+            activeOpacity={0.7}>
+            <Ionicons name="menu" size={themeIconSize} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Logo size={isTablet ? 140 : 100} />
         </View>
-        <TouchableOpacity
-          style={[
-            styles.headerButton,
-            {
-              backgroundColor: colors.backgroundTertiary,
-              width: themeToggleSize,
-              height: themeToggleSize,
-              borderRadius: themeToggleSize / 2,
-            },
-          ]}
-          onPress={() => (navigation as any).navigate('MyCreations')}
-          activeOpacity={0.7}>
-          <Ionicons name="images" size={themeIconSize} color={colors.textPrimary} />
-          {totalUnreadCount > 0 && (
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>
-                {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: colors.backgroundTertiary,
+                width: themeToggleSize,
+                height: themeToggleSize,
+                borderRadius: themeToggleSize / 2,
+              },
+            ]}
+            onPress={() => dispatch(toggleBusinessMode())}
+            activeOpacity={0.7}>
+            <Ionicons name="briefcase-outline" size={themeIconSize} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: colors.backgroundTertiary,
+                width: themeToggleSize,
+                height: themeToggleSize,
+                borderRadius: themeToggleSize / 2,
+              },
+            ]}
+            onPress={() => (navigation as any).navigate('Notifications')}
+            activeOpacity={0.7}>
+            <Ionicons name="notifications" size={themeIconSize} color={colors.textPrimary} />
+            {notificationUnreadCount > 0 && (
+              <View style={styles.bellDot} />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: colors.backgroundTertiary,
+                width: themeToggleSize,
+                height: themeToggleSize,
+                borderRadius: themeToggleSize / 2,
+              },
+            ]}
+            onPress={() => (navigation as any).navigate('MyCreations')}
+            activeOpacity={0.7}>
+            <Ionicons name="images" size={themeIconSize} color={colors.textPrimary} />
+            {totalUnreadCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Image Preview Area */}
@@ -3453,19 +3481,36 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 3,
+    zIndex: 10,
+  },
+  headerLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
   },
   menuButton: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logoContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  headerRight: {
+    flexDirection: 'row' as const,
+    gap: 8,
+    alignItems: 'center' as const,
   },
   headerButton: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  bellDot: {
+    position: 'absolute' as const,
+    top: 6,
+    right: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF4757',
+    borderWidth: 1.5,
+    borderColor: '#fff',
   },
   notificationBadge: {
     position: 'absolute',
@@ -3491,6 +3536,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
+    overflow: 'hidden',
   },
   viewShot: {
     alignItems: 'center',
@@ -4600,8 +4646,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   photoSlotEmpty: {
-    width: 280,
-    height: 330,
+    width: 240,
+    height: 280,
     borderRadius: 20,
     borderWidth: 2,
     borderStyle: 'dashed',

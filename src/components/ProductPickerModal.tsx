@@ -92,6 +92,7 @@ const ProductPickerModal: React.FC<ProductPickerModalProps> = ({
         maxWidth: 1920,
         maxHeight: 1920,
         includeBase64: false,
+        presentationStyle: 'fullScreen',
       });
 
       if (result.didCancel || !result.assets?.[0]?.uri) {
@@ -420,7 +421,8 @@ const ProductPickerModal: React.FC<ProductPickerModalProps> = ({
             </Text>
             <TouchableOpacity
               style={[styles.closeButton, {backgroundColor: colors.backgroundTertiary}]}
-              onPress={onClose}>
+              onPress={onClose}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
               <Text style={[styles.closeButtonText, {color: colors.textPrimary}]}>
                 ✕
               </Text>
@@ -512,14 +514,14 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'absolute',
     right: 16,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeButtonText: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '600',
   },
   tabBar: {

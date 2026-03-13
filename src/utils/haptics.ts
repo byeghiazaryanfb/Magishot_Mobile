@@ -1,4 +1,12 @@
-import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
+import {Platform} from 'react-native';
+
+let HapticFeedback: typeof import('react-native-haptic-feedback').default | null = null;
+
+try {
+  HapticFeedback = require('react-native-haptic-feedback').default;
+} catch {
+  // Module not available (e.g. iPad without Taptic Engine)
+}
 
 const options = {
   enableVibrateFallback: true,
@@ -6,11 +14,10 @@ const options = {
 };
 
 export const triggerHaptic = () => {
+  if (!HapticFeedback || Platform.OS === 'web') return;
   try {
-    console.log('[Haptic] triggering impactMedium');
-    ReactNativeHapticFeedback.trigger('impactMedium', options);
-    console.log('[Haptic] trigger called successfully');
-  } catch (error) {
-    console.warn('[Haptic] failed:', error);
+    HapticFeedback.trigger('impactMedium', options);
+  } catch {
+    // silently fail
   }
 };

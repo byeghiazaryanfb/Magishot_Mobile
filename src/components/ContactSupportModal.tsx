@@ -122,8 +122,9 @@ const ContactSupportModal: React.FC<ContactSupportModalProps> = ({
             <TouchableOpacity
               style={[styles.closeButton, {backgroundColor: colors.backgroundTertiary}]}
               onPress={onClose}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
               activeOpacity={0.7}>
-              <Ionicons name="close" size={20} color={colors.textPrimary} />
+              <Ionicons name="close" size={26} color={colors.textPrimary} />
             </TouchableOpacity>
             <Text style={[styles.headerTitle, {color: colors.textPrimary}]}>
               Contact Support
@@ -330,9 +331,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -341,7 +342,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   headerRight: {
-    width: 36,
+    width: 44,
   },
   content: {
     flex: 1,

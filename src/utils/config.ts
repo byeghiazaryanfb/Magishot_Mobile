@@ -2,18 +2,19 @@
  * App configuration
  */
 
+//https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net
 export const config = {
   // API base URL - update this to match your backend URL
   apiBaseUrl: __DEV__
-    // ? 'http://192.168.111.65:5001' // Office
-     ? 'http://192.168.10.30:5001' // Home
-    : 'https://api.everhome.com', // Production
+    // ? 'http://192.168.10.30:5001' // Office
+    ? 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net' // Home
+    : 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net', // Production
 
   // Gemini API base URL for image transformation
   geminiApiBaseUrl: __DEV__
-    //? 'http://192.168.111.65:5001' // Office
-     ? 'http://192.168.10.30:5001' // Home
-    : 'https://api.everhome.com', // Production
+   //?'http://192.168.10.30:5001' // Office
+    ? 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net' // Home
+    : 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net', // Production
 
   // API timeout in milliseconds
   apiTimeout: 30000,
@@ -29,3 +30,4 @@ export const config = {
 };
 
 export default config;
+

@@ -11,6 +11,7 @@ import SubscriptionScreen from '../screens/SubscriptionScreen';
 import MyCreationsScreen from '../screens/MyCreationsScreen';
 import PhotoDetailScreen from '../screens/PhotoDetailScreen';
 import SubtitleScreen from '../screens/SubtitleScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 import type {UserPhoto} from '../services/userPhotosApi';
 
 interface VideoResult {
@@ -41,6 +42,7 @@ interface VideoTemplateType {
   templateType: number;
   categoryId?: string | null;
   categoryName?: string | null;
+  videoAnimationEnabled?: boolean;
 }
 
 export type RootStackParamList = {
@@ -68,6 +70,7 @@ export type RootStackParamList = {
     imageResult: ImageResult;
   };
   Subtitle: undefined;
+  Notifications: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -142,6 +145,13 @@ const RootNavigator: React.FC = () => {
       <Stack.Screen
         name="Subtitle"
         component={SubtitleScreen}
+        options={{
+          animation: 'slide_from_right',
+        }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
         options={{
           animation: 'slide_from_right',
         }}

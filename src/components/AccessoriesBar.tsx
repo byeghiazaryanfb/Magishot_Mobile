@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect, useMemo, useCallback} from 'react';
+import React, {useState, useRef, useEffect, useMemo, useCallback, useImperativeHandle, forwardRef} from 'react';
 import {
   View,
   Text,
@@ -80,7 +80,11 @@ const getFullImageUrl = (imageUrl?: string): string | null => {
   return `${config.apiBaseUrl}/${imageUrl}`;
 };
 
-const AccessoriesBar: React.FC = () => {
+export interface AccessoriesBarRef {
+  collapse: () => void;
+}
+
+const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
   const {colors} = useTheme();
   const {height} = useWindowDimensions();
   const dispatch = useAppDispatch();
@@ -258,6 +262,8 @@ const AccessoriesBar: React.FC = () => {
     setIsExpanded(false);
   };
 
+  useImperativeHandle(ref, () => ({collapse: collapseIcons}));
+
   // Expand animation function
   const expandIcons = () => {
     Animated.spring(expandAnim, {
@@ -386,6 +392,7 @@ const AccessoriesBar: React.FC = () => {
   };
 
   const closeModal = () => {
+    setPeekItem(null);
     setModalVisible(false);
     setSelectedCategory(null);
     setSelectedSubCategory(null);
@@ -485,7 +492,8 @@ const AccessoriesBar: React.FC = () => {
         {activeTab === 'recent' && (
           <Pressable
             style={[styles.removeFromRecentButton, {backgroundColor: colors.error}]}
-            onPress={() => removeFromRecent(item.id)}>
+            onPress={() => removeFromRecent(item.id)}
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
             <Text style={styles.removeFromRecentText}>×</Text>
           </Pressable>
         )}
@@ -526,14 +534,20 @@ const AccessoriesBar: React.FC = () => {
   });
 
   return (
-    <View style={[
-      styles.container,
-      {
-        backgroundColor: colors.backgroundSecondary,
-        paddingVertical: isSmallPhone ? 4 : 6,
-        minHeight: isSmallPhone ? 46 : 52,
-      }
-    ]}>
+    <Pressable
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.backgroundSecondary,
+          paddingVertical: isSmallPhone ? 4 : 6,
+          minHeight: isSmallPhone ? 46 : 52,
+        },
+      ]}
+      onPress={() => {
+        if (isExpanded) {
+          collapseIcons();
+        }
+      }}>
       {/* Stacked/Expandable Accessory Icons */}
       <View style={styles.stackTouchable}>
         <Animated.View
@@ -557,6 +571,7 @@ const AccessoriesBar: React.FC = () => {
                     triggerHaptic();
                     if (isExpanded) {
                       toggleSelection(item.id);
+                      collapseIcons();
                     } else {
                       toggleExpand();
                     }
@@ -600,7 +615,8 @@ const AccessoriesBar: React.FC = () => {
                 }),
                 opacity: expandAnim,
               },
-            ]}>
+            ]}
+            onStartShouldSetResponder={() => true}>
             <TouchableOpacity
               style={[
                 styles.moreButton,
@@ -610,8 +626,6 @@ const AccessoriesBar: React.FC = () => {
                 },
               ]}
               onPress={() => {
-                setIsExpanded(false);
-                expandAnim.setValue(0);
                 setModalVisible(true);
               }}
               activeOpacity={0.8}>
@@ -621,6 +635,13 @@ const AccessoriesBar: React.FC = () => {
           </Animated.View>
         </Animated.View>
       </View>
+
+      {/* Hint label when no accessory selected */}
+      {selectedAccessories.length === 0 && !isExpanded && (
+        <Text style={[styles.hintLabel, {color: colors.textTertiary}]}>
+          Choose the style or accessory
+        </Text>
+      )}
 
       {/* Selected Accessories Display */}
       {selectedItems.length > 0 && (
@@ -652,7 +673,8 @@ const AccessoriesBar: React.FC = () => {
                 )}
                 <Pressable
                   style={[styles.removeButton, {backgroundColor: colors.error}]}
-                  onPress={() => handleRemoveAccessory(item.id)}>
+                  onPress={() => handleRemoveAccessory(item.id)}
+                  hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
                   <Text style={styles.removeButtonText}>×</Text>
                 </Pressable>
               </View>
@@ -681,7 +703,8 @@ const AccessoriesBar: React.FC = () => {
               )}
               <TouchableOpacity
                 style={[styles.closeButton, {backgroundColor: colors.backgroundTertiary}]}
-                onPress={closeModal}>
+                onPress={closeModal}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
                 <Text style={[styles.closeButtonText, {color: colors.textPrimary}]}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -839,45 +862,72 @@ const AccessoriesBar: React.FC = () => {
 
           </View>
         </View>
-      </Modal>
 
-      {/* Peek Preview - works from both studio tab and modal */}
-      <Modal
-        visible={!!peekItem}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPeekItem(null)}>
-        <View
-          style={styles.peekOverlay}
-          onTouchEnd={() => setPeekItem(null)}
-          onTouchCancel={() => setPeekItem(null)}>
-          <View style={[styles.peekContainer, {backgroundColor: colors.cardBackground}]}>
-            {peekItem && getFullImageUrl(peekItem.imageUrl) ? (
-              <Image
-                source={{uri: getFullImageUrl(peekItem.imageUrl)!}}
-                style={styles.peekImage}
-                resizeMode="contain"
-              />
-            ) : peekItem ? (
-              <Text style={styles.peekEmoji}>{peekItem.icon}</Text>
-            ) : null}
-            {peekItem && (
+        {/* Peek Preview inside modal - rendered here to appear on top of modal content */}
+        {!!peekItem && (
+          <View
+            style={styles.peekOverlay}
+            onTouchEnd={() => setPeekItem(null)}
+            onTouchCancel={() => setPeekItem(null)}>
+            <View style={[styles.peekContainer, {backgroundColor: colors.cardBackground}]}>
+              {getFullImageUrl(peekItem.imageUrl) ? (
+                <Image
+                  source={{uri: getFullImageUrl(peekItem.imageUrl)!}}
+                  style={styles.peekImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Text style={styles.peekEmoji}>{peekItem.icon}</Text>
+              )}
               <Text style={[styles.peekLabel, {color: colors.textPrimary}]}>
                 {peekItem.label}
               </Text>
-            )}
+            </View>
           </View>
-        </View>
+        )}
       </Modal>
-    </View>
+
+      {/* Peek Preview - for studio tab long-press (when modal is closed) */}
+      {!!peekItem && !modalVisible && (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPeekItem(null)}>
+          <View
+            style={styles.peekOverlay}
+            onTouchEnd={() => setPeekItem(null)}
+            onTouchCancel={() => setPeekItem(null)}>
+            <View style={[styles.peekContainer, {backgroundColor: colors.cardBackground}]}>
+              {getFullImageUrl(peekItem.imageUrl) ? (
+                <Image
+                  source={{uri: getFullImageUrl(peekItem.imageUrl)!}}
+                  style={styles.peekImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Text style={styles.peekEmoji}>{peekItem.icon}</Text>
+              )}
+              <Text style={[styles.peekLabel, {color: colors.textPrimary}]}>
+                {peekItem.label}
+              </Text>
+            </View>
+          </View>
+        </Modal>
+      )}
+    </Pressable>
   );
-};
+});
 
 const styles = StyleSheet.create({
+  hintLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
     gap: 12,
     flexShrink: 0,
     zIndex: 10,
@@ -969,15 +1019,15 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   removeButton: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     justifyContent: 'center',
     alignItems: 'center',
   },
   removeButtonText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     marginTop: -1,
   },
@@ -1017,14 +1067,14 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'absolute',
     right: 16,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeButtonText: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '600',
   },
   breadcrumbContainer: {
@@ -1226,9 +1276,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 4,
     left: 4,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1290,5 +1340,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+AccessoriesBar.displayName = 'AccessoriesBar';
 
 export default AccessoriesBar;

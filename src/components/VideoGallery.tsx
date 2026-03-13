@@ -2,7 +2,6 @@ import React, {useEffect, useState, useCallback, useMemo} from 'react';
 import {
   View,
   Text,
-  Image,
   Modal,
   StyleSheet,
   FlatList,
@@ -10,6 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import FastImage from 'react-native-fast-image';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useTheme} from '../theme/ThemeContext';
 import {useAppDispatch, useAppSelector} from '../store/hooks';
@@ -49,6 +49,7 @@ const VideoGallery: React.FC<VideoGalleryProps> = ({visible, onClose}) => {
 
   const [selectedVideo, setSelectedVideo] = useState<{
     videoUrl: string;
+    videoId?: string;
     fileName: string;
     mimeType: string;
     durationSeconds: number;
@@ -118,7 +119,7 @@ const VideoGallery: React.FC<VideoGalleryProps> = ({visible, onClose}) => {
   }, [isLoadingGallery, galleryHasMore, galleryNextCursor, dispatch]);
 
   const handlePlayVideo = (videoUrl: string, fileName: string, mimeType: string, durationSeconds: number, videoId?: string) => {
-    setSelectedVideo({videoUrl, fileName, mimeType, durationSeconds});
+    setSelectedVideo({videoUrl, videoId, fileName, mimeType, durationSeconds});
     setShowVideoPlayer(true);
     if (videoId) {
       dispatch(markVideoViewed(videoId));
@@ -193,8 +194,16 @@ const VideoGallery: React.FC<VideoGalleryProps> = ({visible, onClose}) => {
     }
 
     // Ready job from notification OR gallery item
-    const videoUrl =
-      item.type === 'ready' ? item.job.videoUrl! : item.video.videoUrl;
+    // Prefer API-proxied URL (relativeUrl) over direct Azure Blob URL
+    let videoUrl: string;
+    if (item.type === 'ready') {
+      // Check if gallery already has this video with a relativeUrl
+      const galleryMatch = galleryVideos.find(v => v.videoId === item.job.videoId);
+      videoUrl = (galleryMatch && getFullUrl(galleryMatch.relativeUrl)) || item.job.videoUrl!;
+    } else {
+      videoUrl = getFullUrl(item.video.relativeUrl) || item.video.videoUrl;
+    }
+
     const fileName =
       item.type === 'ready'
         ? item.job.fileName || 'Animated Video'
@@ -229,9 +238,17 @@ const VideoGallery: React.FC<VideoGalleryProps> = ({visible, onClose}) => {
         onPress={() => handlePlayVideo(videoUrl, fileName, mimeType, durationSeconds, videoId)}
         activeOpacity={0.7}>
         {sourcePhotoUrl ? (
-          <Image source={{uri: sourcePhotoUrl}} style={styles.gridThumb} />
+          <FastImage
+            source={{uri: sourcePhotoUrl, priority: FastImage.priority.normal, cache: FastImage.cacheControl.immutable}}
+            style={styles.gridThumb}
+            resizeMode={FastImage.resizeMode.cover}
+          />
         ) : thumbnailUrl ? (
-          <Image source={{uri: thumbnailUrl}} style={styles.gridThumb} />
+          <FastImage
+            source={{uri: thumbnailUrl, priority: FastImage.priority.normal, cache: FastImage.cacheControl.immutable}}
+            style={styles.gridThumb}
+            resizeMode={FastImage.resizeMode.cover}
+          />
         ) : (
           <View style={[styles.gridThumb, {justifyContent: 'center', alignItems: 'center'}]}>
             <Ionicons name="videocam" size={32} color={colors.textTertiary} />
@@ -316,7 +333,8 @@ const VideoGallery: React.FC<VideoGalleryProps> = ({visible, onClose}) => {
             </Text>
             <TouchableOpacity
               style={[styles.closeButton, {backgroundColor: colors.backgroundTertiary}]}
-              onPress={onClose}>
+              onPress={onClose}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
               <Text style={[styles.closeButtonText, {color: colors.textPrimary}]}>
                 ✕
               </Text>
@@ -427,14 +445,14 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'absolute',
     right: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeButtonText: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '600',
   },
   loadingContainer: {

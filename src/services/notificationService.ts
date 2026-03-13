@@ -26,6 +26,7 @@ type ImageReadyCallback = (data: {
   imageUrl: string;
   fileName?: string;
   mimeType?: string;
+  pendingVideoId?: string;
 }) => void;
 type ImageFailedCallback = (data: {
   photoId: string;
@@ -109,7 +110,12 @@ class NotificationService {
       });
 
       this.connection.onclose(error => {
-        console.log('[SignalR] Connection closed', error?.message);
+        if (error) {
+          // Expected when app goes to background — don't use console.error
+          console.log('[SignalR] Connection closed (will reconnect on foreground):', error.message);
+        } else {
+          console.log('[SignalR] Connection closed');
+        }
       });
 
       await this.connection.start();
@@ -193,8 +199,9 @@ class NotificationService {
         imageUrl: string;
         fileName?: string;
         mimeType?: string;
+        pendingVideoId?: string;
       }) => {
-        console.log('[SignalR] ImageReady:', data.photoId, 'url:', data.imageUrl);
+        console.log('[SignalR] ImageReady:', data.photoId, 'url:', data.imageUrl, 'pendingVideoId:', data.pendingVideoId);
         const imageUrl =
           data.imageUrl && !data.imageUrl.startsWith('http')
             ? `${config.apiBaseUrl}${data.imageUrl.startsWith('/') ? '' : '/'}${data.imageUrl}`

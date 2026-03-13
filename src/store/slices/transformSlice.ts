@@ -33,6 +33,7 @@ interface TransformState {
   selectedCategory: SightCategory | 'all';
   selectedAccessories: SelectedAccessory[];
   styleMode: 'effects' | 'openeyes' | 'synthesize' | 'cleanBg' | 'restore' | 'animate' | 'refine'; // Studio tab mode
+  scenarioPanelExpanded: boolean;
 }
 
 const initialState: TransformState = {
@@ -47,6 +48,7 @@ const initialState: TransformState = {
   selectedCategory: 'all',
   selectedAccessories: [],
   styleMode: 'effects',
+  scenarioPanelExpanded: true,
 };
 
 // Async thunk to transform the image
@@ -158,6 +160,12 @@ const transformSlice = createSlice({
     setStyleMode: (state, action: PayloadAction<'effects' | 'openeyes' | 'synthesize' | 'cleanBg' | 'restore' | 'animate' | 'refine'>) => {
       state.styleMode = action.payload;
     },
+    setScenarioPanelExpanded: (state, action: PayloadAction<boolean>) => {
+      state.scenarioPanelExpanded = action.payload;
+    },
+    toggleScenarioPanel: (state) => {
+      state.scenarioPanelExpanded = !state.scenarioPanelExpanded;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -210,6 +218,8 @@ export const {
   removeAccessory,
   clearAccessories,
   setStyleMode,
+  setScenarioPanelExpanded,
+  toggleScenarioPanel,
 } = transformSlice.actions;
 
 export default transformSlice.reducer;

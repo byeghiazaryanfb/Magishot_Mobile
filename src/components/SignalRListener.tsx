@@ -1,11 +1,15 @@
 import {useEffect, useRef} from 'react';
+import {AppState} from 'react-native';
 import {useAppDispatch, useAppSelector} from '../store/hooks';
 import notificationService from '../services/notificationService';
 import {
+  addPendingJob,
   setJobProcessing,
   setJobReady,
   setJobFailed,
   clearAllVideoNotifications,
+  resetGallery,
+  fetchVideoGallery,
 } from '../store/slices/videoNotificationSlice';
 import {
   setImageJobProcessing,
@@ -17,6 +21,10 @@ import {
   clearAllImageNotifications,
 } from '../store/slices/imageNotificationSlice';
 import {fetchUnreadCounts} from '../store/slices/appSlice';
+import {
+  incrementUnreadCount,
+  resetNotifications,
+} from '../store/slices/notificationSlice';
 
 const SignalRListener: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -40,14 +48,20 @@ const SignalRListener: React.FC = () => {
           }),
         );
         dispatch(fetchUnreadCounts());
+        dispatch(incrementUnreadCount());
+        // Refresh gallery so the API-proxied relativeUrl is available for playback
+        dispatch(resetGallery());
+        dispatch(fetchVideoGallery({}));
       },
-      data =>
+      data => {
         dispatch(
           setJobFailed({
             videoId: data.videoId,
             errorMessage: data.errorMessage,
           }),
-        ),
+        );
+        dispatch(incrementUnreadCount());
+      },
     );
 
     notificationService.setImageEventCallbacks(
@@ -61,15 +75,22 @@ const SignalRListener: React.FC = () => {
             mimeType: data.mimeType,
           }),
         );
+        // If the backend queued a video animation, register it as a pending video job
+        if (data.pendingVideoId) {
+          dispatch(addPendingJob({videoId: data.pendingVideoId}));
+        }
         dispatch(fetchUnreadCounts());
+        dispatch(incrementUnreadCount());
       },
-      data =>
+      data => {
         dispatch(
           setImageJobFailed({
             photoId: data.photoId,
             errorMessage: data.errorMessage,
           }),
-        ),
+        );
+        dispatch(incrementUnreadCount());
+      },
     );
 
     notificationService.setSynthesizeEventCallbacks(
@@ -77,14 +98,17 @@ const SignalRListener: React.FC = () => {
       data => {
         dispatch(setSynthesizeReady({images: data.images}));
         dispatch(fetchUnreadCounts());
+        dispatch(incrementUnreadCount());
       },
-      data =>
+      data => {
         dispatch(
           setSynthesizeFailed({
             photoIds: data.photoIds,
             errorMessage: data.errorMessage,
           }),
-        ),
+        );
+        dispatch(incrementUnreadCount());
+      },
     );
   }, [dispatch]);
 
@@ -103,9 +127,31 @@ const SignalRListener: React.FC = () => {
       notificationService.disconnect();
       dispatch(clearAllVideoNotifications());
       dispatch(clearAllImageNotifications());
+      dispatch(resetNotifications());
       prevTokenRef.current = null;
     }
   }, [isAuthenticated, accessToken, dispatch]);
+
+  // Reconnect SignalR when app comes back to foreground
+  const appStateRef = useRef(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === 'active' &&
+        isAuthenticated &&
+        accessToken
+      ) {
+        if (!notificationService.isConnected()) {
+          console.log('[SignalR] App foregrounded — reconnecting...');
+          notificationService.connect(accessToken);
+        }
+      }
+      appStateRef.current = nextAppState;
+    });
+
+    return () => subscription.remove();
+  }, [isAuthenticated, accessToken]);
 
   // Cleanup on unmount
   useEffect(() => {

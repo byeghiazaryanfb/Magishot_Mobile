@@ -5,15 +5,14 @@ import {
   Modal,
   StyleSheet,
   FlatList,
-  Image,
   TouchableOpacity,
   ActivityIndicator,
   Platform,
   PermissionsAndroid,
-  Animated,
-  PanResponder,
   RefreshControl,
+  AppState,
 } from 'react-native';
+import FastImage from 'react-native-fast-image';
 import Share from 'react-native-share';
 import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import RNFS from 'react-native-fs';
@@ -55,6 +54,9 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
   const [clearAllDialogVisible, setClearAllDialogVisible] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewReady, setPreviewReady] = useState(false);
+  const previewLoadingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [messageDialog, setMessageDialog] = useState<{
     visible: boolean;
     type: 'success' | 'error' | 'warning';
@@ -70,83 +72,6 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
     setMessageDialog(prev => ({...prev, visible: false}));
   };
 
-  // Preview zoom state
-  const previewScale = useRef(new Animated.Value(1)).current;
-  const previewTranslateX = useRef(new Animated.Value(0)).current;
-  const previewTranslateY = useRef(new Animated.Value(0)).current;
-  const lastPreviewScale = useRef(1);
-  const lastPreviewTranslateX = useRef(0);
-  const lastPreviewTranslateY = useRef(0);
-  const lastPreviewTap = useRef(0);
-
-  // Reset preview zoom when selected item changes
-  useEffect(() => {
-    resetPreviewZoom();
-  }, [selectedItem]);
-
-  const resetPreviewZoom = () => {
-    Animated.parallel([
-      Animated.spring(previewScale, {toValue: 1, useNativeDriver: true}),
-      Animated.spring(previewTranslateX, {toValue: 0, useNativeDriver: true}),
-      Animated.spring(previewTranslateY, {toValue: 0, useNativeDriver: true}),
-    ]).start();
-    lastPreviewScale.current = 1;
-    lastPreviewTranslateX.current = 0;
-    lastPreviewTranslateY.current = 0;
-  };
-
-  const handlePreviewDoubleTap = () => {
-    const now = Date.now();
-    if (now - lastPreviewTap.current < 300) {
-      if (lastPreviewScale.current > 1) {
-        resetPreviewZoom();
-      } else {
-        Animated.spring(previewScale, {toValue: 2, useNativeDriver: true}).start();
-        lastPreviewScale.current = 2;
-      }
-    }
-    lastPreviewTap.current = now;
-  };
-
-  const previewPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        return lastPreviewScale.current > 1 || gestureState.numberActiveTouches === 2;
-      },
-      onPanResponderGrant: () => {
-        handlePreviewDoubleTap();
-      },
-      onPanResponderMove: (_, gestureState) => {
-        if (gestureState.numberActiveTouches === 2) {
-          const distance = Math.sqrt(
-            Math.pow(gestureState.dx, 2) + Math.pow(gestureState.dy, 2)
-          );
-          const newScale = Math.max(1, Math.min(lastPreviewScale.current + distance / 200, 4));
-          previewScale.setValue(newScale);
-        } else if (lastPreviewScale.current > 1) {
-          const newX = lastPreviewTranslateX.current + gestureState.dx;
-          const newY = lastPreviewTranslateY.current + gestureState.dy;
-          previewTranslateX.setValue(newX);
-          previewTranslateY.setValue(newY);
-        }
-      },
-      onPanResponderRelease: () => {
-        previewScale.addListener(({value}) => {
-          lastPreviewScale.current = value;
-        });
-        previewTranslateX.addListener(({value}) => {
-          lastPreviewTranslateX.current = value;
-        });
-        previewTranslateY.addListener(({value}) => {
-          lastPreviewTranslateY.current = value;
-        });
-        if (lastPreviewScale.current < 1) {
-          resetPreviewZoom();
-        }
-      },
-    })
-  ).current;
 
   // Fetch photos from API
   const fetchPhotos = useCallback(async (cursor?: string, isRefresh = false) => {
@@ -208,6 +133,24 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
       setHasMore(true);
     }
   }, [visible, fetchPhotos]);
+
+  // Refresh photos when app comes back to foreground while modal is open
+  const appStateRef = useRef(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === 'active' &&
+        visible &&
+        accessToken
+      ) {
+        fetchPhotos(undefined, true);
+      }
+      appStateRef.current = nextAppState;
+    });
+
+    return () => subscription.remove();
+  }, [visible, accessToken, fetchPhotos]);
 
   // Handle pull to refresh
   const handleRefresh = useCallback(() => {
@@ -398,9 +341,19 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
         {backgroundColor: colors.backgroundTertiary},
         selectedItem?.id === item.id && {borderColor: colors.primary, borderWidth: 3},
       ]}
-      onPress={() => setSelectedItem(item)}
+      onPress={() => {
+        if (previewLoadingTimer.current) clearTimeout(previewLoadingTimer.current);
+        setIsPreviewLoading(true);
+        // If no thumbnail, skip the black placeholder phase
+        setPreviewReady(!item.thumbnailFullUrl);
+        setSelectedItem(item);
+      }}
       activeOpacity={0.8}>
-      <Image source={{uri: item.fullUrl}} style={styles.gridImage} />
+      <FastImage
+        source={{uri: item.thumbnailFullUrl ?? item.fullUrl, priority: FastImage.priority.normal, cache: FastImage.cacheControl.immutable}}
+        style={styles.gridImage}
+        resizeMode={FastImage.resizeMode.cover}
+      />
       <View style={[styles.gridOverlay, {backgroundColor: 'rgba(0,0,0,0.5)'}]}>
         <Text style={styles.gridLabel} numberOfLines={1}>
           {item.generationType || 'Generated'}
@@ -452,7 +405,8 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
             </Text>
             <TouchableOpacity
               style={[styles.closeButton, {backgroundColor: colors.backgroundTertiary}]}
-              onPress={onClose}>
+              onPress={onClose}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
               <Text style={[styles.closeButtonText, {color: colors.textPrimary}]}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -499,29 +453,50 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
               {/* Selected Item Preview */}
               {selectedItem && (
                 <View style={[styles.previewContainer, {backgroundColor: colors.background}]}>
-                  <View style={styles.previewImageContainer}>
-                    <Animated.View
-                      {...previewPanResponder.panHandlers}
-                      style={[
-                        styles.previewImageZoomContainer,
-                        {
-                          transform: [
-                            {scale: previewScale},
-                            {translateX: previewTranslateX},
-                            {translateY: previewTranslateY},
-                          ],
-                        },
-                      ]}>
-                      <Image
-                        source={{uri: selectedItem.fullUrl}}
-                        style={styles.previewImage}
-                        resizeMode="contain"
+                  <TouchableOpacity
+                    style={styles.previewImageContainer}
+                    onPress={() => setFullScreenImage(selectedItem.fullUrl)}
+                    activeOpacity={0.9}>
+                    <View style={styles.previewImageZoomContainer}>
+                      {previewReady ? (
+                        <>
+                          {/* Thumbnail shown while full image loads */}
+                          {isPreviewLoading && selectedItem.thumbnailFullUrl && (
+                            <FastImage
+                              key={`thumb-${selectedItem.id}`}
+                              source={{uri: selectedItem.thumbnailFullUrl, priority: FastImage.priority.high, cache: FastImage.cacheControl.immutable}}
+                              style={[styles.previewImage, {position: 'absolute', top: 0, left: 0, zIndex: 2}]}
+                              resizeMode={FastImage.resizeMode.contain}
+                            />
+                          )}
+                          {/* Full resolution image */}
+                          <FastImage
+                            key={selectedItem.id}
+                            source={{uri: selectedItem.fullUrl, priority: FastImage.priority.normal, cache: FastImage.cacheControl.immutable}}
+                            style={[styles.previewImage, isPreviewLoading && {opacity: 0}]}
+                            resizeMode={FastImage.resizeMode.contain}
+                            onLoadEnd={() => {
+                              previewLoadingTimer.current = setTimeout(() => setIsPreviewLoading(false), 500);
+                            }}
+                          />
+                        </>
+                      ) : (
+                        <View style={styles.previewCover} />
+                      )}
+                    </View>
+                    {/* Hidden preloader — loads thumbnail to trigger previewReady */}
+                    {!previewReady && selectedItem.thumbnailFullUrl && (
+                      <FastImage
+                        key={`preload-${selectedItem.id}`}
+                        source={{uri: selectedItem.thumbnailFullUrl, priority: FastImage.priority.high, cache: FastImage.cacheControl.immutable}}
+                        style={{width: 0, height: 0, position: 'absolute'}}
+                        onLoadEnd={() => setPreviewReady(true)}
                       />
-                    </Animated.View>
-                    {/* Zoom hint */}
+                    )}
+                    {/* Tap to zoom hint */}
                     <View style={styles.previewZoomHint}>
-                      <Ionicons name="search-outline" size={10} color="rgba(255,255,255,0.7)" />
-                      <Text style={styles.previewZoomHintText}>Double-tap to zoom</Text>
+                      <Ionicons name="expand-outline" size={10} color="rgba(255,255,255,0.7)" />
+                      <Text style={styles.previewZoomHintText}>Tap to zoom</Text>
                     </View>
                     {/* Photo info */}
                     <View style={styles.previewInfoBadge}>
@@ -529,22 +504,11 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
                         {formatFileSize(selectedItem.fileSizeBytes)}
                       </Text>
                     </View>
-                    {/* Reset zoom button */}
-                    {lastPreviewScale.current > 1 && (
-                      <TouchableOpacity
-                        style={styles.previewResetBtn}
-                        onPress={resetPreviewZoom}
-                        activeOpacity={0.7}>
-                        <Ionicons name="contract-outline" size={14} color="#fff" />
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity
-                      style={[styles.fullScreenBtn, {backgroundColor: 'rgba(255,27,109,0.7)'}]}
-                      onPress={() => setFullScreenImage(selectedItem.fullUrl)}
-                      activeOpacity={0.7}>
+                    <View
+                      style={[styles.fullScreenBtn, {backgroundColor: 'rgba(255,27,109,0.7)'}]}>
                       <Ionicons name="expand" size={16} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
+                    </View>
+                  </TouchableOpacity>
                   <View style={styles.previewActions}>
                     <TouchableOpacity
                       style={[styles.actionButton, {backgroundColor: colors.primary + '15'}]}
@@ -678,6 +642,13 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
         ]}
         onClose={hideMessage}
       />
+
+      {/* Full-screen loading overlay */}
+      {isPreviewLoading && (
+        <View style={styles.fullScreenLoader}>
+          <ActivityIndicator size="large" color="#fff" />
+        </View>
+      )}
     </Modal>
   );
 };
@@ -712,14 +683,14 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'absolute',
     right: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeButtonText: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '600',
   },
   loadingContainer: {
@@ -782,6 +753,27 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 200,
   },
+  previewCover: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#000',
+    zIndex: 1,
+  },
+  fullScreenLoader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    zIndex: 9999,
+    elevation: 9999,
+  },
   previewZoomHint: {
     position: 'absolute',
     top: 8,
@@ -809,17 +801,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: '500',
-  },
-  previewResetBtn: {
-    position: 'absolute',
-    top: 8,
-    right: 44,
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   fullScreenBtn: {
     position: 'absolute',

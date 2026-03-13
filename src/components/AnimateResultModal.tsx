@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  Linking,
 } from 'react-native';
 import Video, {VideoRef} from 'react-native-video';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -16,6 +17,7 @@ import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
 import {useTheme} from '../theme/ThemeContext';
+import CustomDialog from './CustomDialog';
 import {useAppSelector} from '../store/hooks';
 
 interface AnimateResultModalProps {
@@ -23,6 +25,7 @@ interface AnimateResultModalProps {
   onClose: () => void;
   videoResult: {
     videoUrl: string;
+    videoId?: string;
     fileName: string;
     mimeType: string;
     durationSeconds: number;
@@ -40,9 +43,18 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
 
   const [isPlaying, setIsPlaying] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [videoError, setVideoError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [dialog, setDialog] = useState<{
+    visible: boolean;
+    icon: string;
+    iconColor: string;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'permission';
+  }>({visible: false, icon: '', iconColor: '', title: '', message: '', type: 'success'});
 
   const handlePlayPause = () => {
     setIsPlaying(!isPlaying);
@@ -60,6 +72,14 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
   const handleVideoEnd = () => {
     setIsPlaying(false);
     videoRef.current?.seek(0);
+  };
+
+  const handleVideoError = (error: any) => {
+    const errorDetails = error?.error || error;
+    console.log('Video playback error:', JSON.stringify(errorDetails, null, 2));
+    console.log('Video URL was:', videoResult?.videoUrl);
+    setIsLoading(false);
+    setVideoError('Failed to load video. Please try again.');
   };
 
   const formatTime = (seconds: number) => {
@@ -89,7 +109,14 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
         await CameraRoll.saveAsset(res.path(), {type: 'video'});
         await fs.unlink(res.path());
 
-        Alert.alert('Success', 'Video saved to your photo library!');
+        setDialog({
+          visible: true,
+          icon: 'checkmark-circle',
+          iconColor: colors.success,
+          title: 'Saved!',
+          message: 'Your video has been saved to your photo library.',
+          type: 'success',
+        });
       } else {
         const downloadPath = `${fs.dirs.DownloadDir}/${fileName}`;
 
@@ -105,11 +132,37 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
           },
         }).fetch('GET', videoResult.videoUrl);
 
-        Alert.alert('Success', 'Video saved to Downloads!');
+        setDialog({
+          visible: true,
+          icon: 'checkmark-circle',
+          iconColor: colors.success,
+          title: 'Saved!',
+          message: 'Your video has been saved to Downloads.',
+          type: 'success',
+        });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Download error:', error);
-      Alert.alert('Error', 'Failed to save video. Please try again.');
+      const msg = error?.message || '';
+      if (msg.includes('denied') || msg.includes('permission') || msg.includes('Permission')) {
+        setDialog({
+          visible: true,
+          icon: 'lock-closed',
+          iconColor: '#F59E0B',
+          title: 'Permission Required',
+          message: 'Please allow photo library access in Settings to save videos.',
+          type: 'permission',
+        });
+      } else {
+        setDialog({
+          visible: true,
+          icon: 'alert-circle',
+          iconColor: colors.error,
+          title: 'Save Failed',
+          message: 'Could not save the video. Please try again.',
+          type: 'error',
+        });
+      }
     } finally {
       setIsSaving(false);
     }
@@ -152,6 +205,7 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
   const handleClose = () => {
     setIsPlaying(false);
     setIsLoading(true);
+    setVideoError(null);
     setCurrentTime(0);
     setDuration(0);
     onClose();
@@ -186,8 +240,9 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
               style={[
                 styles.closeButton,
                 {backgroundColor: colors.backgroundTertiary},
-              ]}>
-              <Ionicons name="close" size={18} color={colors.textSecondary} />
+              ]}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+              <Ionicons name="close" size={26} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -195,12 +250,7 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
           <View style={[styles.videoContainer, {backgroundColor: '#000'}]}>
             <Video
               ref={videoRef}
-              source={{
-                uri: videoResult.videoUrl,
-                headers: accessToken
-                  ? {Authorization: `Bearer ${accessToken}`}
-                  : undefined,
-              }}
+              source={{uri: videoResult.videoUrl}}
               style={styles.video}
               resizeMode="contain"
               paused={!isPlaying}
@@ -208,12 +258,20 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
               onLoad={handleVideoLoad}
               onProgress={handleProgress}
               onEnd={handleVideoEnd}
+              onError={handleVideoError}
             />
 
-            {isLoading && (
+            {isLoading && !videoError && (
               <View style={styles.loadingOverlay}>
                 <ActivityIndicator size="large" color="#fff" />
                 <Text style={styles.loadingText}>Loading video...</Text>
+              </View>
+            )}
+
+            {videoError && (
+              <View style={styles.loadingOverlay}>
+                <Ionicons name="alert-circle-outline" size={48} color="#FF4757" />
+                <Text style={styles.loadingText}>{videoError}</Text>
               </View>
             )}
 
@@ -318,6 +376,24 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
               <Text style={styles.buttonText}>Delete</Text>
             </TouchableOpacity>
           </View>
+          {/* Styled Dialog */}
+          <CustomDialog
+            visible={dialog.visible}
+            icon={dialog.icon}
+            iconColor={dialog.iconColor}
+            title={dialog.title}
+            message={dialog.message}
+            buttons={
+              dialog.type === 'permission'
+                ? [
+                    {text: 'Cancel', onPress: () => setDialog(prev => ({...prev, visible: false})), style: 'cancel'},
+                    {text: 'Open Settings', onPress: () => { setDialog(prev => ({...prev, visible: false})); Linking.openSettings(); }, style: 'default'},
+                  ]
+                : [{text: 'Got it', onPress: () => setDialog(prev => ({...prev, visible: false})), style: 'default'}]
+            }
+            onClose={() => setDialog(prev => ({...prev, visible: false}))}
+            autoDismissMs={dialog.type === 'success' ? 2500 : undefined}
+          />
         </View>
       </View>
     </Modal>
@@ -362,9 +438,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   closeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },

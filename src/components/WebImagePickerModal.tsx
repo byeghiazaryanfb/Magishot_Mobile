@@ -148,9 +148,10 @@ const WebImagePickerModal: React.FC<WebImagePickerModalProps> = ({
             </Text>
             <TouchableOpacity
               style={[styles.closeButton, {backgroundColor: colors.backgroundTertiary}]}
-              onPress={handleClose}>
+              onPress={handleClose}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
               <Text style={[styles.closeButtonText, {color: colors.textPrimary}]}>
-                x
+                ✕
               </Text>
             </TouchableOpacity>
           </View>
@@ -311,14 +312,14 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'absolute',
     right: 16,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeButtonText: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '600',
   },
   inputSection: {

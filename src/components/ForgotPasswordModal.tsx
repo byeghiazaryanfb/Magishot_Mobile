@@ -472,8 +472,9 @@ const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
           <TouchableOpacity
             style={styles.closeButton}
             onPress={handleClose}
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
             activeOpacity={0.7}>
-            <Ionicons name="close" size={24} color="rgba(255,255,255,0.7)" />
+            <Ionicons name="close" size={26} color="rgba(255,255,255,0.7)" />
           </TouchableOpacity>
 
           {step === 'email' && renderEmailStep()}
@@ -509,9 +510,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 16,
     right: 16,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',

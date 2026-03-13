@@ -153,9 +153,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               transform: [{scale: logoScale}],
             },
           ]}>
-          <View style={styles.logoBorder}>
-            <Logo size={logoSize} />
-          </View>
+          <Logo size={logoSize} />
         </Animated.View>
 
         {/* Title & Features Section */}
@@ -255,13 +253,6 @@ const styles = StyleSheet.create({
   titleSection: {
     alignItems: 'center',
     paddingHorizontal: 32,
-  },
-  logoBorder: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,100,150,0.45)',
-    borderRadius: 180,
-    paddingHorizontal: 28,
-    paddingVertical: 12,
   },
   title: {
     fontWeight: '800',

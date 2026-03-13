@@ -8,6 +8,8 @@ import {
   Platform,
   ActivityIndicator,
   Share,
+  Linking,
+  PermissionsAndroid,
 } from 'react-native';
 import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -15,6 +17,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import Video, {VideoRef} from 'react-native-video';
 import {useTheme} from '../theme/ThemeContext';
 import GradientButton from '../components/GradientButton';
+import CustomDialog from '../components/CustomDialog';
 import RNFetchBlob from 'rn-fetch-blob';
 import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 
@@ -44,6 +47,14 @@ const VideoResultScreen: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [dialog, setDialog] = useState<{
+    visible: boolean;
+    icon: string;
+    iconColor: string;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'permission';
+  }>({visible: false, icon: '', iconColor: '', title: '', message: '', type: 'success'});
 
   const handlePlayPause = () => {
     setIsPlaying(!isPlaying);
@@ -69,6 +80,31 @@ const VideoResultScreen: React.FC = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const requestSavePermission = async (): Promise<boolean> => {
+    if (Platform.OS === 'ios') {
+      try {
+        await CameraRoll.saveAsset('', {type: 'video'});
+      } catch {
+        // This will fail but triggers the permission prompt if not yet asked.
+        // If already denied, we need to direct the user to Settings.
+      }
+      // Try a real check — attempt is the only reliable way on iOS
+      return true;
+    } else {
+      const version = Platform.Version as number;
+      if (version >= 33) return true; // Android 13+ doesn't need WRITE_EXTERNAL_STORAGE
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+        {
+          title: 'Storage Permission',
+          message: 'App needs access to save videos to your device.',
+          buttonPositive: 'Allow',
+        },
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    }
+  };
+
   const handleDownload = async () => {
     try {
       setIsSaving(true);
@@ -92,7 +128,14 @@ const VideoResultScreen: React.FC = () => {
         // Clean up cache file
         await fs.unlink(res.path());
 
-        Alert.alert('Success', 'Video saved to your photo library!');
+        setDialog({
+          visible: true,
+          icon: 'checkmark-circle',
+          iconColor: colors.success,
+          title: 'Saved!',
+          message: 'Your video has been saved to your photo library.',
+          type: 'success',
+        });
       } else {
         // For Android, download to Downloads folder
         const downloadPath = `${fs.dirs.DownloadDir}/${fileName}`;
@@ -109,11 +152,37 @@ const VideoResultScreen: React.FC = () => {
           },
         }).fetch('GET', videoResult.videoUrl);
 
-        Alert.alert('Success', 'Video saved to Downloads!');
+        setDialog({
+          visible: true,
+          icon: 'checkmark-circle',
+          iconColor: colors.success,
+          title: 'Saved!',
+          message: 'Your video has been saved to Downloads.',
+          type: 'success',
+        });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Download error:', error);
-      Alert.alert('Error', 'Failed to save video. Please try again.');
+      const msg = error?.message || '';
+      if (msg.includes('denied') || msg.includes('permission') || msg.includes('Permission')) {
+        setDialog({
+          visible: true,
+          icon: 'lock-closed',
+          iconColor: '#F59E0B',
+          title: 'Permission Required',
+          message: 'Please allow photo library access in Settings to save videos.',
+          type: 'permission',
+        });
+      } else {
+        setDialog({
+          visible: true,
+          icon: 'alert-circle',
+          iconColor: colors.error,
+          title: 'Save Failed',
+          message: 'Could not save the video. Please try again.',
+          type: 'error',
+        });
+      }
     } finally {
       setIsSaving(false);
     }
@@ -238,6 +307,25 @@ const VideoResultScreen: React.FC = () => {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Styled Dialog */}
+      <CustomDialog
+        visible={dialog.visible}
+        icon={dialog.icon}
+        iconColor={dialog.iconColor}
+        title={dialog.title}
+        message={dialog.message}
+        buttons={
+          dialog.type === 'permission'
+            ? [
+                {text: 'Cancel', onPress: () => setDialog(prev => ({...prev, visible: false})), style: 'cancel'},
+                {text: 'Open Settings', onPress: () => { setDialog(prev => ({...prev, visible: false})); Linking.openSettings(); }, style: 'default'},
+              ]
+            : [{text: 'Got it', onPress: () => setDialog(prev => ({...prev, visible: false})), style: 'default'}]
+        }
+        onClose={() => setDialog(prev => ({...prev, visible: false}))}
+        autoDismissMs={dialog.type === 'success' ? 2500 : undefined}
+      />
     </View>
   );
 };

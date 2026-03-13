@@ -18,6 +18,7 @@ import {useTheme} from '../theme/ThemeContext';
 import GifPlayer from '../components/GifPlayer';
 import GradientButton from '../components/GradientButton';
 import PhotoPickerModal from '../components/PhotoPickerModal';
+import FullScreenImageModal from '../components/FullScreenImageModal';
 import CustomDialog from '../components/CustomDialog';
 import {ImageAsset} from '../services/imageTransform';
 import {config} from '../utils/config';
@@ -44,11 +45,9 @@ interface AspectRatioOption {
 const ASPECT_RATIO_OPTIONS: AspectRatioOption[] = [
   {id: '9:16', label: 'Reels', value: '9:16', icon: 'phone-portrait-outline'},
   {id: '16:9', label: 'YouTube', value: '16:9', icon: 'phone-landscape-outline'},
-  {id: '1:1', label: 'Square', value: '1:1', icon: 'square-outline'},
-  {id: '4:5', label: 'Post', value: '4:5', icon: 'tablet-portrait-outline'},
 ];
 
-const getPreviewDimensions = (ratio: string, maxHeight: number = 180, maxWidth: number = 240) => {
+const getPreviewDimensions = (ratio: string, maxHeight: number = 300, maxWidth: number = 340) => {
   const [w, h] = ratio.split(':').map(Number);
   const aspectRatio = w / h;
 
@@ -85,7 +84,9 @@ const TemplateDetailScreen: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
   const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
+  const [fullScreenImageUri, setFullScreenImageUri] = useState<string | null>(null);
   const [selectedAspectRatio, setSelectedAspectRatio] = useState<string>('9:16');
+  const [creationAnimation, setCreationAnimation] = useState(true);
   const [dialog, setDialog] = useState<{
     visible: boolean;
     title: string;
@@ -93,13 +94,13 @@ const TemplateDetailScreen: React.FC = () => {
     type: 'error' | 'success';
   }>({visible: false, title: '', message: '', type: 'error'});
 
-  const slotPadding = 16;
-  const slotGap = 12;
+  const slotPadding = 20;
+  const slotGap = 8;
   const slotsPerRow = photoCount <= 2 ? photoCount : photoCount <= 4 ? 2 : 3;
   const totalGaps = (slotsPerRow - 1) * slotGap;
   const rawSlotWidth = (width - slotPadding * 2 - totalGaps) / slotsPerRow;
-  const slotWidth = photoCount === 1 ? Math.min(rawSlotWidth, width * 0.45) : rawSlotWidth;
-  const slotHeight = slotWidth * 1.2;
+  const slotWidth = Math.min(rawSlotWidth, 140);
+  const slotHeight = slotWidth * 1.1;
 
   const handlePickImage = (slotId: number) => {
     setSelectedSlotId(slotId);
@@ -168,6 +169,9 @@ const TemplateDetailScreen: React.FC = () => {
       formData.append('templateId', template.id);
       formData.append('durationSeconds', '5');
       formData.append('aspectRatio', selectedAspectRatio);
+      if (template.videoAnimationEnabled) {
+        formData.append('creationAnimation', String(creationAnimation));
+      }
 
       const headers: Record<string, string> = {
         'Content-Type': 'multipart/form-data',
@@ -292,51 +296,43 @@ const TemplateDetailScreen: React.FC = () => {
             Aspect Ratio
           </Text>
           <View style={styles.aspectRatioOptions}>
-            {ASPECT_RATIO_OPTIONS.map(option => (
-              <TouchableOpacity
-                key={option.id}
-                style={[
-                  styles.aspectRatioOption,
-                  {
-                    backgroundColor:
-                      selectedAspectRatio === option.id
-                        ? colors.primary
-                        : isDark
-                          ? 'rgba(255,255,255,0.1)'
-                          : 'rgba(0,0,0,0.05)',
-                    borderColor:
-                      selectedAspectRatio === option.id
-                        ? colors.primary
-                        : isDark
-                          ? 'rgba(255,255,255,0.2)'
-                          : 'rgba(0,0,0,0.1)',
-                  },
-                ]}
-                onPress={() => setSelectedAspectRatio(option.id)}
-                activeOpacity={0.7}>
-                <Ionicons
-                  name={option.icon as any}
-                  size={18}
-                  color={
-                    selectedAspectRatio === option.id
-                      ? '#fff'
-                      : colors.textSecondary
-                  }
-                />
-                <Text
+            {ASPECT_RATIO_OPTIONS.map(option => {
+              const isSelected = selectedAspectRatio === option.id;
+              return (
+                <TouchableOpacity
+                  key={option.id}
                   style={[
-                    styles.aspectRatioText,
+                    styles.aspectRatioOption,
                     {
-                      color:
-                        selectedAspectRatio === option.id
-                          ? '#fff'
-                          : colors.textSecondary,
+                      backgroundColor: isSelected
+                        ? colors.primary + '18'
+                        : isDark
+                          ? 'rgba(255,255,255,0.06)'
+                          : 'rgba(0,0,0,0.03)',
+                      borderColor: isSelected
+                        ? colors.primary
+                        : isDark
+                          ? 'rgba(255,255,255,0.12)'
+                          : 'rgba(0,0,0,0.08)',
                     },
-                  ]}>
-                  {option.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  ]}
+                  onPress={() => setSelectedAspectRatio(option.id)}
+                  activeOpacity={0.7}>
+                  <Ionicons
+                    name={option.icon as any}
+                    size={13}
+                    color={isSelected ? colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.aspectRatioText,
+                      {color: isSelected ? colors.primary : colors.textSecondary},
+                    ]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
 
@@ -358,7 +354,7 @@ const TemplateDetailScreen: React.FC = () => {
                     marginRight: (index + 1) % slotsPerRow === 0 ? 0 : slotGap,
                   },
                 ]}
-                onPress={() => handlePickImage(slot.id)}
+                onPress={() => slot.uri ? setFullScreenImageUri(slot.uri) : handlePickImage(slot.id)}
                 activeOpacity={0.7}>
                 {slot.uri ? (
                   <>
@@ -378,6 +374,11 @@ const TemplateDetailScreen: React.FC = () => {
                       style={styles.removeButton}
                       onPress={() => handleRemoveImage(slot.id)}>
                       <Ionicons name="close" size={16} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.replaceButton}
+                      onPress={() => handlePickImage(slot.id)}>
+                      <Ionicons name="camera-outline" size={16} color="#fff" />
                     </TouchableOpacity>
                     <View style={styles.checkmark}>
                       <Ionicons name="checkmark-circle" size={24} color="#4ADE80" />
@@ -407,20 +408,31 @@ const TemplateDetailScreen: React.FC = () => {
           </View>
         </View>
 
+        {/* Creation Animation Checkbox */}
+        {template.videoAnimationEnabled && (
+          <TouchableOpacity
+            style={styles.checkboxRow}
+            onPress={() => setCreationAnimation(prev => !prev)}
+            activeOpacity={0.7}>
+            <Ionicons
+              name={creationAnimation ? 'checkbox' : 'square-outline'}
+              size={24}
+              color={creationAnimation ? colors.primary : colors.textSecondary}
+            />
+            <Text style={[styles.checkboxLabel, {color: colors.textPrimary}]}>
+              Creation Animation
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {/* Generate Button */}
         <View style={styles.buttonSection}>
           <GradientButton
             title={isGenerating ? 'Submitting...' : 'Generate Video'}
             onPress={handleGenerate}
             disabled={!canGenerate || isGenerating}
+            loading={isGenerating}
           />
-          {isGenerating && (
-            <ActivityIndicator
-              size="small"
-              color={colors.primary}
-              style={{marginTop: 12}}
-            />
-          )}
         </View>
 
         <View style={{height: 120}} />
@@ -435,6 +447,13 @@ const TemplateDetailScreen: React.FC = () => {
         }}
         onSelectPhoto={handlePhotoSelected}
         title={`Select Photo ${selectedSlotId !== null ? selectedSlotId + 1 : ''}`}
+      />
+
+      {/* Full Screen Image Modal */}
+      <FullScreenImageModal
+        visible={!!fullScreenImageUri}
+        imageUri={fullScreenImageUri}
+        onClose={() => setFullScreenImageUri(null)}
       />
 
       {/* Success / Error Dialog */}
@@ -497,7 +516,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   gifContainer: {
-    height: 240,
+    height: 340,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -544,30 +563,31 @@ const styles = StyleSheet.create({
   },
   aspectRatioSection: {
     paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingBottom: 12,
   },
   aspectRatioLabel: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
-    marginBottom: 10,
+    marginBottom: 8,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   aspectRatioOptions: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   aspectRatioOption: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
     borderWidth: 1,
-    gap: 6,
+    gap: 4,
   },
   aspectRatioText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
   },
   slotsSection: {
@@ -657,10 +677,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  replaceButton: {
+    position: 'absolute',
+    top: 8,
+    right: 42,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   checkmark: {
     position: 'absolute',
     bottom: 8,
     right: 8,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+    gap: 10,
+  },
+  checkboxLabel: {
+    fontSize: 15,
+    fontWeight: '500',
   },
   buttonSection: {
     paddingHorizontal: 16,

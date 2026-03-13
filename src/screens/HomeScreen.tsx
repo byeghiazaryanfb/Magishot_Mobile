@@ -2,18 +2,14 @@ import React, {useEffect, useState} from 'react';
 import {View, Text, StyleSheet, TouchableOpacity, useWindowDimensions} from 'react-native';
 import {useNavigation, DrawerActions, useFocusEffect} from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import {CopilotStep, useCopilot, walkthroughable} from 'react-native-copilot';
+import {useCopilot} from 'react-native-copilot';
 import {useAppDispatch, useAppSelector} from '../store/hooks';
-import {setInitialized} from '../store/slices/appSlice';
+import {setInitialized, toggleBusinessMode} from '../store/slices/appSlice';
 import {useTheme} from '../theme/ThemeContext';
-import SightsBar from '../components/SightsBar';
 import CameraArea from '../components/CameraArea';
 import ResultModal from '../components/ResultModal';
 import Logo from '../components/Logo';
 import {useWalkthrough, WALKTHROUGH_KEYS} from '../hooks/useWalkthrough';
-
-// Create walkthroughable components
-const WalkthroughableView = walkthroughable(View);
 
 const HomeScreen: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -22,9 +18,7 @@ const HomeScreen: React.FC = () => {
   const {width} = useWindowDimensions();
   const {unopenedPhotosCount, unplayedVideosCount} = useAppSelector(state => state.app);
   const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount;
-  const styleMode = useAppSelector(state => state.transform.styleMode);
-  const templateDisabled = styleMode !== 'effects';
-
+  const notificationUnreadCount = useAppSelector(state => state.notification.unreadCount);
   // Walkthrough for Studio tab
   const {start, copilotEvents, currentStep} = useCopilot();
   const {shouldShowWalkthrough, isLoading: walkthroughLoading, completeWalkthrough} = useWalkthrough(WALKTHROUGH_KEYS.STUDIO);
@@ -61,9 +55,9 @@ const HomeScreen: React.FC = () => {
   // Listen for walkthrough completion
   useEffect(() => {
     const handleStop = () => {
-      // Only complete Studio walkthrough if we started it and current step is in Studio range (1-4)
+      // Only complete Studio walkthrough if we started it and current step is in Studio range (1-3)
       const stepOrder = currentStep?.order ?? 0;
-      if (walkthroughStarted && stepOrder >= 1 && stepOrder <= 4) {
+      if (walkthroughStarted && stepOrder >= 1 && stepOrder <= 3) {
         completeWalkthrough();
         setWalkthroughStarted(false);
       }
@@ -85,61 +79,73 @@ const HomeScreen: React.FC = () => {
             paddingHorizontal: headerPadding,
           },
         ]}>
-        <TouchableOpacity
-          style={[
-            styles.menuButton,
-            {
-              backgroundColor: colors.backgroundTertiary,
-              width: themeToggleSize,
-              height: themeToggleSize,
-              borderRadius: themeToggleSize / 2,
-            },
-          ]}
-          onPress={openDrawer}
-          activeOpacity={0.7}>
-          <Ionicons name="menu" size={themeIconSize} color={colors.textPrimary} />
-        </TouchableOpacity>
-
-        <View style={styles.logoContainer}>
-          <Logo size={isTablet ? 220 : 180} />
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={openDrawer}
+            activeOpacity={0.7}>
+            <Ionicons name="menu" size={themeIconSize} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Logo size={isTablet ? 140 : 100} />
         </View>
 
-        <TouchableOpacity
-          style={[
-            styles.headerButton,
-            {
-              backgroundColor: colors.backgroundTertiary,
-              width: themeToggleSize,
-              height: themeToggleSize,
-              borderRadius: themeToggleSize / 2,
-            },
-          ]}
-          onPress={() => (navigation as any).navigate('MyCreations')}
-          activeOpacity={0.7}>
-          <Ionicons name="images" size={themeIconSize} color={colors.textPrimary} />
-          {totalUnreadCount > 0 && (
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>
-                {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: colors.backgroundTertiary,
+                width: themeToggleSize,
+                height: themeToggleSize,
+                borderRadius: themeToggleSize / 2,
+              },
+            ]}
+            onPress={() => dispatch(toggleBusinessMode())}
+            activeOpacity={0.7}>
+            <Ionicons name="briefcase-outline" size={themeIconSize} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: colors.backgroundTertiary,
+                width: themeToggleSize,
+                height: themeToggleSize,
+                borderRadius: themeToggleSize / 2,
+              },
+            ]}
+            onPress={() => (navigation as any).navigate('Notifications')}
+            activeOpacity={0.7}>
+            <Ionicons name="notifications" size={themeIconSize} color={colors.textPrimary} />
+            {notificationUnreadCount > 0 && (
+              <View style={styles.bellDot} />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: colors.backgroundTertiary,
+                width: themeToggleSize,
+                height: themeToggleSize,
+                borderRadius: themeToggleSize / 2,
+              },
+            ]}
+            onPress={() => (navigation as any).navigate('MyCreations')}
+            activeOpacity={0.7}>
+            <Ionicons name="images" size={themeIconSize} color={colors.textPrimary} />
+            {totalUnreadCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Step 1: Templates/Sights Bar */}
-      <View style={{opacity: templateDisabled ? 0.35 : 1}} pointerEvents={templateDisabled ? 'none' : 'auto'}>
-        <CopilotStep
-          text="Choose a template like Paris, New York, or any style you want to transform your photo into."
-          order={1}
-          name="🎨 Templates">
-          <WalkthroughableView>
-            <SightsBar />
-          </WalkthroughableView>
-        </CopilotStep>
-      </View>
-
-      {/* CameraArea contains steps 2, 3, 4 */}
+      {/* CameraArea contains steps 1, 2, 3, 4 */}
       <CameraArea />
 
       <ResultModal />
@@ -163,18 +169,34 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   menuButton: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logoContainer: {
-    flex: 1,
+  headerRight: {
+    flexDirection: 'row',
+    gap: 8,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   headerButton: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  bellDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF4757',
+    borderWidth: 1.5,
+    borderColor: '#fff',
   },
   notificationBadge: {
     position: 'absolute',

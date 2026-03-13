@@ -3,8 +3,10 @@
  * @format
  */
 
-import React, {useState, useEffect} from 'react';
-import {StatusBar, StyleSheet, View, Text, Pressable} from 'react-native';
+import React, {useState, useEffect, useRef} from 'react';
+import {LogBox, StatusBar, StyleSheet, View, Text, Pressable, AppState} from 'react-native';
+
+LogBox.ignoreAllLogs();
 import {Provider} from 'react-redux';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {
@@ -23,8 +25,10 @@ import PaywallScreen from './src/screens/PaywallScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import {OnboardingStorage, AuthStorage} from './src/utils/storage';
 import {initializeAuth, clearAuth, updateTokens} from './src/store/slices/authSlice';
-import {fetchVideoGallery} from './src/store/slices/videoNotificationSlice';
+import {fetchVideoGallery, resetGallery, clearStaleJobs} from './src/store/slices/videoNotificationSlice';
+import {clearStaleImageJobs} from './src/store/slices/imageNotificationSlice';
 import {fetchUnreadCounts} from './src/store/slices/appSlice';
+import {fetchNotificationUnreadCount} from './src/store/slices/notificationSlice';
 import api from './src/services/api';
 import SignalRListener from './src/components/SignalRListener';
 import InAppNotificationBanner from './src/components/InAppNotificationBanner';
@@ -296,7 +300,30 @@ function AppContent() {
     if (isAuthenticated) {
       dispatch(fetchVideoGallery({}));
       dispatch(fetchUnreadCounts());
+      dispatch(fetchNotificationUnreadCount());
     }
+  }, [isAuthenticated, dispatch]);
+
+  // Refresh galleries when app comes back to foreground
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active' &&
+        isAuthenticated
+      ) {
+        dispatch(clearStaleJobs());
+        dispatch(clearStaleImageJobs());
+        dispatch(resetGallery());
+        dispatch(fetchVideoGallery({}));
+        dispatch(fetchUnreadCounts());
+        dispatch(fetchNotificationUnreadCount());
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => subscription.remove();
   }, [isAuthenticated, dispatch]);
 
   // Check onboarding status after auth is initialized

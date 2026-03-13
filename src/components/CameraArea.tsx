@@ -40,8 +40,8 @@ import {
 } from '../store/slices/transformSlice';
 import {useTheme} from '../theme/ThemeContext';
 import {ImageAsset} from '../services/imageTransform';
-import AccessoriesBar from './AccessoriesBar';
-import ActionsBar, {SynthesizeAction} from './ActionsBar';
+import AccessoriesBar, {AccessoriesBarRef} from './AccessoriesBar';
+import ActionsBar, {SynthesizeAction, ActionsBarRef} from './ActionsBar';
 import CharacterPickerModal from './CharacterPickerModal';
 import PhotoPickerModal from './PhotoPickerModal';
 import FullScreenImageModal from './FullScreenImageModal';
@@ -54,6 +54,7 @@ import {addPendingImageJob, addPendingSynthesizeJobs} from '../store/slices/imag
 import {SvgXml} from 'react-native-svg';
 import MaskDrawingCanvas, {MaskDrawingCanvasRef} from './MaskDrawingCanvas';
 import AnimateResultModal from './AnimateResultModal';
+import SightsBar from './SightsBar';
 
 interface RemovalShortcut {
   id: string;
@@ -63,17 +64,9 @@ interface RemovalShortcut {
   prompt?: string;
 }
 
-const EXTEND_ASPECT_RATIOS = [
-  {id: '9:16', label: 'Reels', icon: 'phone-portrait-outline'},
-  {id: '16:9', label: 'YouTube', icon: 'phone-landscape-outline'},
-  {id: '1:1', label: 'Square', icon: 'square-outline'},
-  {id: '4:5', label: 'Post', icon: 'tablet-portrait-outline'},
-];
-
 const ANIMATE_ASPECT_RATIOS = [
   {id: '16:9', label: 'Landscape', icon: 'phone-landscape-outline'},
   {id: '9:16', label: 'Portrait', icon: 'phone-portrait-outline'},
-  {id: '1:1', label: 'Square', icon: 'square-outline'},
 ];
 
 const CameraArea: React.FC = () => {
@@ -132,6 +125,15 @@ const CameraArea: React.FC = () => {
   const [cleanBgResultUrl, setCleanBgResultUrl] = useState<string | null>(null);
   const [showPhotoSourcePicker, setShowPhotoSourcePicker] = useState(false);
   const maskCanvasRef = useRef<MaskDrawingCanvasRef>(null);
+  const accessoriesBarRef = useRef<AccessoriesBarRef>(null);
+  const actionsBarRef1 = useRef<ActionsBarRef>(null);
+  const actionsBarRef2 = useRef<ActionsBarRef>(null);
+
+  const collapseAllBars = useCallback(() => {
+    accessoriesBarRef.current?.collapse();
+    actionsBarRef1.current?.collapse();
+    actionsBarRef2.current?.collapse();
+  }, []);
   const [hasMaskDrawn, setHasMaskDrawn] = useState(false);
   const [cleanBgPhotoDimensions, setCleanBgPhotoDimensions] = useState<{w: number; h: number} | null>(null);
   const [brushSize, setBrushSize] = useState(20);
@@ -140,13 +142,16 @@ const CameraArea: React.FC = () => {
   const [removalShortcuts, setRemovalShortcuts] = useState<RemovalShortcut[]>([]);
   const [selectedShortcut, setSelectedShortcut] = useState<RemovalShortcut | null>(null);
 
-  // Extender aspect ratio
+  // Aspect ratios
   const [extendAspectRatio, setExtendAspectRatio] = useState<string>('9:16');
 
   // Animate mode state
   const [animatePhoto, setAnimatePhoto] = useState<ImageAsset | null>(null);
   const [isAnimateLoading, setIsAnimateLoading] = useState(false);
   const [isEffectsGenerating, setIsEffectsGenerating] = useState(false);
+  const [isSynthesizeLoading, setIsSynthesizeLoading] = useState(false);
+  const [isImageLoading, setIsImageLoading] = useState(false);
+  const imageLoadingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [animateAspectRatio, setAnimateAspectRatio] = useState<string>('16:9');
   const [showAnimateResult, setShowAnimateResult] = useState(false);
   const [animateVideoResult, setAnimateVideoResult] = useState<{
@@ -370,6 +375,8 @@ const CameraArea: React.FC = () => {
       fileName: photo.fileName,
     };
 
+    if (imageLoadingTimer.current) clearTimeout(imageLoadingTimer.current);
+    setIsImageLoading(true);
     setEffectsPhoto(imageAsset);
   };
 
@@ -482,6 +489,7 @@ const CameraArea: React.FC = () => {
         maxWidth: 1920,
         maxHeight: 1920,
         includeBase64: false,
+        presentationStyle: 'fullScreen',
       });
 
       if (result.didCancel) {
@@ -505,9 +513,7 @@ const CameraArea: React.FC = () => {
     try {
       const result = await launchImageLibrary({
         mediaType: 'photo',
-        quality: 0.8,
-        maxWidth: 1920,
-        maxHeight: 1920,
+        quality: 1,
         includeBase64: false,
       });
 
@@ -530,6 +536,7 @@ const CameraArea: React.FC = () => {
 
   const handleClearImage = () => {
     setEffectsPhoto(null);
+    setIsImageLoading(false);
     dispatch(clearTransformState());
   };
 
@@ -538,9 +545,7 @@ const CameraArea: React.FC = () => {
     try {
       const result = await launchImageLibrary({
         mediaType: 'photo',
-        quality: 0.8,
-        maxWidth: 1920,
-        maxHeight: 1920,
+        quality: 1,
         includeBase64: false,
       });
 
@@ -734,6 +739,7 @@ const CameraArea: React.FC = () => {
     }
 
     // All requirements met - fire-and-forget async generate
+    setIsSynthesizeLoading(true);
     try {
       dispatch(setSourceImage(synthesizePhoto2));
 
@@ -794,6 +800,8 @@ const CameraArea: React.FC = () => {
         'Processing Failed',
         error instanceof Error ? error.message : 'Failed to synthesize images. Please try again.',
       );
+    } finally {
+      setIsSynthesizeLoading(false);
     }
   };
 
@@ -1233,6 +1241,7 @@ const CameraArea: React.FC = () => {
     <View style={styles.wizardStepContent}>
       {/* Actions Bar - at the top */}
       <ActionsBar
+        ref={actionsBarRef1}
         selectedAction={selectedSynthesizeAction}
         onSelectAction={setSelectedSynthesizeAction}
       />
@@ -1342,20 +1351,28 @@ const CameraArea: React.FC = () => {
           colors={[colors.gradientStart, colors.gradientEnd]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 0}}
-          style={styles.nextButtonGradient}>
+          style={[styles.nextButtonGradient, isSynthesizeLoading && {shadowOpacity: 0}]}>
           <TouchableOpacity
             style={styles.nextButtonTouchable}
             onPress={handleSynthesizeGenerate}
-            activeOpacity={0.9}>
-            <Text style={[styles.nextButtonText, {color: '#fff'}]}>
-              {'Generate'}
-              {selectedSynthesizeAction?.estimatedCoins && !selectedSynthesizeAction?.isFree ? (
-                <Text style={{color: '#FFD700'}}>{` (${selectedSynthesizeAction.estimatedCoins} ★)`}</Text>
-              ) : (
-                <Text style={{color: '#22C55E'}}>{' (Free)'}</Text>
-              )}
-              {' →'}
-            </Text>
+            disabled={isSynthesizeLoading}
+            activeOpacity={0.7}>
+            {isSynthesizeLoading ? (
+              <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+                <ActivityIndicator size="small" color="#fff" />
+                <Text style={[styles.nextButtonText, {color: '#fff'}]}>Submitting...</Text>
+              </View>
+            ) : (
+              <Text style={[styles.nextButtonText, {color: '#fff'}]}>
+                {'Generate'}
+                {selectedSynthesizeAction?.estimatedCoins && !selectedSynthesizeAction?.isFree ? (
+                  <Text style={{color: '#FFD700'}}>{` (${selectedSynthesizeAction.estimatedCoins} ★)`}</Text>
+                ) : (
+                  <Text style={{color: '#22C55E'}}>{' (Free)'}</Text>
+                )}
+                {' →'}
+              </Text>
+            )}
           </TouchableOpacity>
         </LinearGradient>
       </View>
@@ -1369,6 +1386,7 @@ const CameraArea: React.FC = () => {
       <View style={styles.step2TopContent}>
         {/* Actions bar inside step 2 */}
         <ActionsBar
+          ref={actionsBarRef2}
           selectedAction={selectedSynthesizeAction}
           onSelectAction={setSelectedSynthesizeAction}
         />
@@ -1408,6 +1426,7 @@ const CameraArea: React.FC = () => {
             style={[
               styles.nextButtonGradient,
               !selectedSynthesizeAction && styles.nextButtonDisabled,
+              isSynthesizeLoading && {shadowOpacity: 0},
             ]}>
             <TouchableOpacity
               style={styles.nextButtonTouchable}
@@ -1416,19 +1435,26 @@ const CameraArea: React.FC = () => {
                   handleSynthesizeGenerate();
                 }
               }}
-              disabled={!selectedSynthesizeAction}
-              activeOpacity={0.9}>
-              <Text style={[styles.nextButtonText, {color: selectedSynthesizeAction ? '#fff' : colors.textTertiary}]}>
-                {'Generate'}
-                {selectedSynthesizeAction ? (
-                  selectedSynthesizeAction.estimatedCoins && !selectedSynthesizeAction.isFree ? (
-                    <Text style={{color: '#FFD700'}}>{` (${selectedSynthesizeAction.estimatedCoins} ★)`}</Text>
-                  ) : (
-                    <Text style={{color: '#22C55E'}}>{' (Free)'}</Text>
-                  )
-                ) : null}
-                {' →'}
-              </Text>
+              disabled={!selectedSynthesizeAction || isSynthesizeLoading}
+              activeOpacity={0.7}>
+              {isSynthesizeLoading ? (
+                <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text style={[styles.nextButtonText, {color: '#fff'}]}>Submitting...</Text>
+                </View>
+              ) : (
+                <Text style={[styles.nextButtonText, {color: selectedSynthesizeAction ? '#fff' : colors.textTertiary}]}>
+                  {'Generate'}
+                  {selectedSynthesizeAction ? (
+                    selectedSynthesizeAction.estimatedCoins && !selectedSynthesizeAction.isFree ? (
+                      <Text style={{color: '#FFD700'}}>{` (${selectedSynthesizeAction.estimatedCoins} ★)`}</Text>
+                    ) : (
+                      <Text style={{color: '#22C55E'}}>{' (Free)'}</Text>
+                    )
+                  ) : null}
+                  {' →'}
+                </Text>
+              )}
             </TouchableOpacity>
           </LinearGradient>
         </View>
@@ -1499,12 +1525,12 @@ const CameraArea: React.FC = () => {
           colors={[colors.gradientStart, colors.gradientEnd]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 0}}
-          style={styles.nextButtonGradient}>
+          style={[styles.nextButtonGradient, isOpenEyesLoading && {shadowOpacity: 0}]}>
           <TouchableOpacity
             style={styles.nextButtonTouchable}
             onPress={handleOpenEyesGenerate}
             disabled={isOpenEyesLoading}
-            activeOpacity={0.9}>
+            activeOpacity={0.7}>
             {isOpenEyesLoading ? (
               <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
                 <ActivityIndicator size="small" color="#fff" />
@@ -1586,12 +1612,12 @@ const CameraArea: React.FC = () => {
           colors={[colors.gradientStart, colors.gradientEnd]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 0}}
-          style={styles.nextButtonGradient}>
+          style={[styles.nextButtonGradient, isRestoreLoading && {shadowOpacity: 0}]}>
           <TouchableOpacity
             style={styles.nextButtonTouchable}
             onPress={handleRestoreGenerate}
             disabled={isRestoreLoading}
-            activeOpacity={0.9}>
+            activeOpacity={0.7}>
             {isRestoreLoading ? (
               <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
                 <ActivityIndicator size="small" color="#fff" />
@@ -1673,12 +1699,12 @@ const CameraArea: React.FC = () => {
           colors={[colors.gradientStart, colors.gradientEnd]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 0}}
-          style={styles.nextButtonGradient}>
+          style={[styles.nextButtonGradient, isRefineLoading && {shadowOpacity: 0}]}>
           <TouchableOpacity
             style={styles.nextButtonTouchable}
             onPress={handleRefineGenerate}
             disabled={isRefineLoading}
-            activeOpacity={0.9}>
+            activeOpacity={0.7}>
             {isRefineLoading ? (
               <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
                 <ActivityIndicator size="small" color="#fff" />
@@ -1756,43 +1782,45 @@ const CameraArea: React.FC = () => {
 
       {/* Aspect Ratio Selector */}
       <View style={{paddingHorizontal: 16, paddingBottom: 8}}>
-        <View style={{flexDirection: 'row', gap: 10}}>
-          {ANIMATE_ASPECT_RATIOS.map(option => (
-            <TouchableOpacity
-              key={option.id}
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingVertical: 10,
-                paddingHorizontal: 8,
-                borderRadius: 10,
-                borderWidth: 1,
-                gap: 6,
-                backgroundColor: animateAspectRatio === option.id
-                  ? colors.primary
-                  : isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                borderColor: animateAspectRatio === option.id
-                  ? colors.primary
-                  : isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)',
-              }}
-              onPress={() => setAnimateAspectRatio(option.id)}
-              activeOpacity={0.7}>
-              <Ionicons
-                name={option.icon as any}
-                size={16}
-                color={animateAspectRatio === option.id ? '#fff' : colors.textSecondary}
-              />
-              <Text style={{
-                fontSize: 12,
-                fontWeight: '600',
-                color: animateAspectRatio === option.id ? '#fff' : colors.textSecondary,
-              }}>
-                {option.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        <View style={{flexDirection: 'row', gap: 8}}>
+          {ANIMATE_ASPECT_RATIOS.map(option => {
+            const isSelected = animateAspectRatio === option.id;
+            return (
+              <TouchableOpacity
+                key={option.id}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingVertical: 6,
+                  paddingHorizontal: 12,
+                  borderRadius: 20,
+                  borderWidth: 1,
+                  gap: 4,
+                  backgroundColor: isSelected
+                    ? colors.primary + '18'
+                    : isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)',
+                  borderColor: isSelected
+                    ? colors.primary
+                    : isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+                }}
+                onPress={() => setAnimateAspectRatio(option.id)}
+                activeOpacity={0.7}>
+                <Ionicons
+                  name={option.icon as any}
+                  size={13}
+                  color={isSelected ? colors.primary : colors.textSecondary}
+                />
+                <Text style={{
+                  fontSize: 11,
+                  fontWeight: '600',
+                  color: isSelected ? colors.primary : colors.textSecondary,
+                }}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
@@ -1802,12 +1830,12 @@ const CameraArea: React.FC = () => {
           colors={[colors.gradientStart, colors.gradientEnd]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 0}}
-          style={styles.nextButtonGradient}>
+          style={[styles.nextButtonGradient, isAnimateLoading && {shadowOpacity: 0}]}>
           <TouchableOpacity
             style={styles.nextButtonTouchable}
             onPress={handleAnimateGenerate}
             disabled={isAnimateLoading}
-            activeOpacity={0.9}>
+            activeOpacity={0.7}>
             {isAnimateLoading ? (
               <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
                 <ActivityIndicator size="small" color="#fff" />
@@ -2119,55 +2147,13 @@ const CameraArea: React.FC = () => {
         </View>
       </View>
 
-      {/* Aspect Ratio Selector */}
-      <View style={{paddingHorizontal: 16, paddingBottom: 8}}>
-        <View style={{flexDirection: 'row', gap: 10}}>
-          {EXTEND_ASPECT_RATIOS.map(option => (
-            <TouchableOpacity
-              key={option.id}
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingVertical: 10,
-                paddingHorizontal: 8,
-                borderRadius: 10,
-                borderWidth: 1,
-                gap: 6,
-                backgroundColor: extendAspectRatio === option.id
-                  ? colors.primary
-                  : isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                borderColor: extendAspectRatio === option.id
-                  ? colors.primary
-                  : isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)',
-              }}
-              onPress={() => setExtendAspectRatio(option.id)}
-              activeOpacity={0.7}>
-              <Ionicons
-                name={option.icon as any}
-                size={16}
-                color={extendAspectRatio === option.id ? '#fff' : colors.textSecondary}
-              />
-              <Text style={{
-                fontSize: 12,
-                fontWeight: '600',
-                color: extendAspectRatio === option.id ? '#fff' : colors.textSecondary,
-              }}>
-                {option.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
       {/* Generate Button */}
       <View style={styles.wizardNavButtonsFull}>
         <LinearGradient
           colors={[colors.gradientStart, colors.gradientEnd]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 0}}
-          style={styles.nextButtonGradient}>
+          style={[styles.nextButtonGradient, isCleanBgLoading && {shadowOpacity: 0}]}>
           <TouchableOpacity
             style={styles.nextButtonTouchable}
             onPress={cleanBgPhoto ? handleCleanBgGenerate : () => {
@@ -2175,7 +2161,7 @@ const CameraArea: React.FC = () => {
               setShowPhotoPicker(true);
             }}
             disabled={isCleanBgLoading}
-            activeOpacity={0.9}>
+            activeOpacity={0.7}>
             {isCleanBgLoading ? (
               <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
                 <ActivityIndicator size="small" color="#fff" />
@@ -2365,22 +2351,12 @@ const CameraArea: React.FC = () => {
       ) : (
         /* Normal Mode: Original Camera Area */
         <View style={[styles.effectsTabContainer, {maxWidth: isTablet ? 600 : '100%', alignSelf: 'center', width: '100%'}]}>
-          {/* Step 2: Accessories Bar */}
-          <CopilotStep
-            text="Add fun accessories like hats, glasses, or jewelry to enhance your transformed photo."
-            order={2}
-            name="👒 Accessories">
-            <WalkthroughableView>
-              <AccessoriesBar />
-            </WalkthroughableView>
-          </CopilotStep>
-
           {/* Photo Picker - centered */}
           <View style={styles.effectsPhotoSection}>
-            {/* Step 3: Add Photo */}
+            {/* Step 2: Add Photo */}
             <CopilotStep
               text="Tap here to add your photo from the camera or gallery. This is the photo that will be transformed."
-              order={3}
+              order={2}
               name="📸 Add Photo">
               <WalkthroughableView style={[styles.photoSlot, {maxWidth: '100%', flex: 1, width: '100%'}]}>
                 {effectsPhoto ? (
@@ -2389,7 +2365,9 @@ const CameraArea: React.FC = () => {
                     onPress={showImagePickerOptions}
                     activeOpacity={0.8}>
                     <View style={[styles.photoSlotFilled, {borderColor: 'transparent', aspectRatio: undefined, flex: 1}]}>
-                      <Image source={{uri: effectsPhoto.uri}} style={styles.photoSlotImage} resizeMode="contain" />
+                      <Image source={{uri: effectsPhoto.uri}} style={styles.photoSlotImage} resizeMode="contain" onLoadEnd={() => {
+                        imageLoadingTimer.current = setTimeout(() => setIsImageLoading(false), 500);
+                      }} />
                       <TouchableOpacity
                         style={[styles.fullScreenBtn, {backgroundColor: 'rgba(255,27,109,0.7)'}]}
                         onPress={(e) => {
@@ -2429,22 +2407,35 @@ const CameraArea: React.FC = () => {
             </CopilotStep>
           </View>
 
-          {/* Step 4: Generate Button - same style as Next button */}
+          {/* Step 1: Accessories Bar */}
+          <CopilotStep
+            text="Add fun accessories like hats, glasses, or jewelry to enhance your transformed photo."
+            order={1}
+            name="👒 Accessories">
+            <WalkthroughableView>
+              <AccessoriesBar ref={accessoriesBarRef} />
+            </WalkthroughableView>
+          </CopilotStep>
+
+          {/* Sights/Scenarios Bar */}
+          <SightsBar />
+
+          {/* Step 3: Generate Button - same style as Next button */}
           <CopilotStep
             text="Once you've selected a template and added your photo, tap Generate to create your magical transformation!"
-            order={4}
+            order={3}
             name="✨ Generate">
             <WalkthroughableView style={styles.wizardNavButtonsFull}>
               <LinearGradient
                 colors={[colors.gradientStart, colors.gradientEnd]}
                 start={{x: 0, y: 0}}
                 end={{x: 1, y: 0}}
-                style={styles.nextButtonGradient}>
+                style={[styles.nextButtonGradient, isEffectsGenerating && {shadowOpacity: 0}]}>
                 <TouchableOpacity
                   style={styles.nextButtonTouchable}
                   onPress={handleGenerate}
                   disabled={isEffectsGenerating}
-                  activeOpacity={0.9}>
+                  activeOpacity={0.7}>
                   {isEffectsGenerating ? (
                     <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
                       <ActivityIndicator size="small" color="#fff" />
@@ -2674,7 +2665,7 @@ const CameraArea: React.FC = () => {
                     style={styles.nextButtonTouchable}
                     onPress={handleMaskCleanGenerate}
                     disabled={isCleanBgLoading}
-                    activeOpacity={0.9}>
+                    activeOpacity={0.7}>
                     {isCleanBgLoading ? (
                       <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
                         <ActivityIndicator size="small" color="#fff" />
@@ -2766,6 +2757,13 @@ const CameraArea: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Full-screen loading overlay for gallery image */}
+      {isImageLoading && (
+        <View style={styles.fullScreenLoader}>
+          <ActivityIndicator size="large" color="#fff" />
+        </View>
+      )}
     </View>
   );
 };
@@ -2832,8 +2830,6 @@ const styles = StyleSheet.create({
   effectsPhotoSection: {
     flex: 1,
     justifyContent: 'flex-end',
-    alignItems: 'center',
-    paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 8,
     overflow: 'hidden',
@@ -3191,17 +3187,17 @@ const styles = StyleSheet.create({
   },
   removeRefButton: {
     position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    top: -8,
+    right: -8,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
   },
   removeRefButtonText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   addReferenceButton: {
@@ -3294,9 +3290,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 6,
     right: 6,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -3328,7 +3324,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   wizardNavButtonsFull: {
-    paddingHorizontal: 16,
     paddingTop: 0,
     paddingBottom: 0,
   },
@@ -3510,6 +3505,18 @@ const styles = StyleSheet.create({
   photoSlotImage: {
     width: '100%',
     height: '100%',
+  },
+  fullScreenLoader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    zIndex: 9999,
+    elevation: 9999,
   },
   photoSlotIcon: {
     fontSize: 28,

@@ -249,6 +249,7 @@ const ImageResultScreen: React.FC = () => {
           <TouchableOpacity
             style={styles.closeButton}
             onPress={() => setShowFullScreen(false)}
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
             activeOpacity={0.7}>
             <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>

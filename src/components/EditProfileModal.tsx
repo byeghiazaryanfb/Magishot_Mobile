@@ -120,8 +120,9 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({
             <TouchableOpacity
               style={[styles.closeButton, {backgroundColor: colors.backgroundTertiary}]}
               onPress={onClose}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
               activeOpacity={0.7}>
-              <Ionicons name="close" size={20} color={colors.textPrimary} />
+              <Ionicons name="close" size={26} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
 
@@ -292,9 +293,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },

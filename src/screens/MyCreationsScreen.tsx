@@ -4,12 +4,13 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  Image,
   TouchableOpacity,
   ActivityIndicator,
   Animated,
   RefreshControl,
+  AppState,
 } from 'react-native';
+import FastImage from 'react-native-fast-image';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -67,6 +68,13 @@ const MyCreationsScreen: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<TabType>(route.params?.initialTab || 'photos');
   const tabIndicatorAnim = useRef(new Animated.Value(0)).current;
+
+  // Sync tab when navigating back with a new initialTab param
+  useEffect(() => {
+    if (route.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route.params?.initialTab]);
 
   // Badge is now driven by isPlayed from the backend;
   // it clears only when individual videos are actually played.
@@ -208,6 +216,23 @@ const MyCreationsScreen: React.FC = () => {
     fetchPhotos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Refresh photos when app comes back to foreground
+  const appStateRef = useRef(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === 'active' &&
+        accessToken
+      ) {
+        fetchPhotos(undefined, true);
+      }
+      appStateRef.current = nextAppState;
+    });
+
+    return () => subscription.remove();
+  }, [accessToken, fetchPhotos]);
 
   // ─── Videos: data ───
   const activeJobs = useMemo(
@@ -492,7 +517,11 @@ const MyCreationsScreen: React.FC = () => {
             <Ionicons name="alert-circle" size={32} color={colors.error} />
           </View>
         ) : (
-          <Image source={{uri: photo.fullUrl}} style={styles.gridImage} />
+          <FastImage
+            source={{uri: photo.thumbnailFullUrl ?? photo.fullUrl, priority: FastImage.priority.normal, cache: FastImage.cacheControl.immutable}}
+            style={styles.gridImage}
+            resizeMode={FastImage.resizeMode.cover}
+          />
         )}
         {/* FAILED badge for failed photos */}
         {isFailed && (
@@ -617,9 +646,17 @@ const MyCreationsScreen: React.FC = () => {
             <Ionicons name="alert-circle" size={32} color={colors.error} />
           </View>
         ) : sourcePhotoUrl ? (
-          <Image source={{uri: sourcePhotoUrl}} style={styles.videoGridThumb} />
+          <FastImage
+            source={{uri: sourcePhotoUrl, priority: FastImage.priority.normal, cache: FastImage.cacheControl.immutable}}
+            style={styles.videoGridThumb}
+            resizeMode={FastImage.resizeMode.cover}
+          />
         ) : thumbnailUrl ? (
-          <Image source={{uri: thumbnailUrl}} style={styles.videoGridThumb} />
+          <FastImage
+            source={{uri: thumbnailUrl, priority: FastImage.priority.normal, cache: FastImage.cacheControl.immutable}}
+            style={styles.videoGridThumb}
+            resizeMode={FastImage.resizeMode.cover}
+          />
         ) : (
           <View style={[styles.videoGridThumb, {justifyContent: 'center', alignItems: 'center'}]}>
             <Ionicons name="videocam" size={32} color={colors.textTertiary} />

@@ -152,7 +152,8 @@ const PalettePickerModal: React.FC<PalettePickerModalProps> = ({
                   styles.closeButton,
                   {backgroundColor: colors.backgroundTertiary},
                 ]}
-                onPress={onClose}>
+                onPress={onClose}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
                 <Text style={[styles.closeButtonText, {color: colors.textPrimary}]}>
                   Done
                 </Text>
@@ -231,9 +232,13 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'absolute',
     right: 16,
+    minWidth: 44,
+    minHeight: 44,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 16,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   closeButtonText: {
     fontSize: 14,

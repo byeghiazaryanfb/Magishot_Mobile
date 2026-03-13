@@ -235,7 +235,8 @@ const TryOnResultModal: React.FC = () => {
               style={[
                 styles.closeButton,
                 {backgroundColor: colors.backgroundTertiary},
-              ]}>
+              ]}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
               <Text style={[styles.closeButtonText, {color: colors.textSecondary}]}>
                 x
               </Text>
@@ -464,14 +465,14 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   closeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeButtonText: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
   },
   imageContainer: {

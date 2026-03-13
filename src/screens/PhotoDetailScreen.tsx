@@ -17,6 +17,8 @@ import Share from 'react-native-share';
 import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import RNFS from 'react-native-fs';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import {ImageZoom} from '@likashefqet/react-native-image-zoom';
 import {useTheme} from '../theme/ThemeContext';
 import {useAppSelector, useAppDispatch} from '../store/hooks';
 import {UserPhoto, deleteUserPhoto, markPhotoOpened} from '../services/userPhotosApi';
@@ -40,6 +42,7 @@ const PhotoDetailScreen: React.FC = () => {
   const [currentIndex, setCurrentIndex] = useState(route.params.currentIndex);
   const currentPhoto = photos[currentIndex];
   const [showBefore, setShowBefore] = useState(false);
+  const [isZoomed, setIsZoomed] = useState(false);
   const hasOriginal = !!currentPhoto?.originalImageFullUrl;
 
   // Mark photo as viewed when it becomes the current photo (on mount + swipe)
@@ -67,17 +70,6 @@ const PhotoDetailScreen: React.FC = () => {
     message: string;
   }>({visible: false, type: 'error', title: '', message: ''});
 
-  // Zoom state
-  const scale = useRef(new Animated.Value(1)).current;
-  const translateX = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(0)).current;
-  const lastScale = useRef(1);
-  const lastTranslateX = useRef(0);
-  const lastTranslateY = useRef(0);
-  const lastTap = useRef(0);
-  const initialPinchDistance = useRef(0);
-  const pinchScaleStart = useRef(1);
-
   // Swipe navigation state
   const swipeTranslateY = useRef(new Animated.Value(0)).current;
   const swipeOpacity = useRef(new Animated.Value(1)).current;
@@ -88,27 +80,14 @@ const PhotoDetailScreen: React.FC = () => {
   photosRef.current = photos;
   const isSwipeAnimatingRef = useRef(false);
   isSwipeAnimatingRef.current = isSwipeAnimating;
+  const isZoomedRef = useRef(false);
+  isZoomedRef.current = isZoomed;
 
-  const resetZoom = useCallback(() => {
-    Animated.parallel([
-      Animated.spring(scale, {toValue: 1, useNativeDriver: true}),
-      Animated.spring(translateX, {toValue: 0, useNativeDriver: true}),
-      Animated.spring(translateY, {toValue: 0, useNativeDriver: true}),
-    ]).start();
-    lastScale.current = 1;
-    lastTranslateX.current = 0;
-    lastTranslateY.current = 0;
-    initialPinchDistance.current = 0;
-    pinchScaleStart.current = 1;
-  }, [scale, translateX, translateY]);
-
-  const resetZoomRef = useRef(resetZoom);
-  resetZoomRef.current = resetZoom;
-
+  // Reset zoom state when switching photos
   useEffect(() => {
-    resetZoom();
+    setIsZoomed(false);
     setShowBefore(false);
-  }, [currentIndex, resetZoom]);
+  }, [currentIndex]);
 
   // ─── Swipe navigation ───
   const goToNextPhoto = useCallback(() => {
@@ -121,7 +100,6 @@ const PhotoDetailScreen: React.FC = () => {
         Animated.timing(swipeOpacity, {toValue: 0, duration: 200, useNativeDriver: true}),
       ]).start(() => {
         setCurrentIndex(idx + 1);
-        resetZoomRef.current();
         swipeTranslateY.setValue(SCREEN_HEIGHT);
         Animated.parallel([
           Animated.timing(swipeTranslateY, {toValue: 0, duration: 200, useNativeDriver: true}),
@@ -146,7 +124,6 @@ const PhotoDetailScreen: React.FC = () => {
         Animated.timing(swipeOpacity, {toValue: 0, duration: 200, useNativeDriver: true}),
       ]).start(() => {
         setCurrentIndex(idx - 1);
-        resetZoomRef.current();
         swipeTranslateY.setValue(-SCREEN_HEIGHT);
         Animated.parallel([
           Animated.timing(swipeTranslateY, {toValue: 0, duration: 200, useNativeDriver: true}),
@@ -166,85 +143,27 @@ const PhotoDetailScreen: React.FC = () => {
   goToNextRef.current = goToNextPhoto;
   goToPrevRef.current = goToPrevPhoto;
 
-  // Helper: distance between two touch points
-  const getTouchDistance = (touches: any[]) => {
-    const dx = touches[0].pageX - touches[1].pageX;
-    const dy = touches[0].pageY - touches[1].pageY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  // ─── Unified PanResponder: handles zoom (pinch + double-tap + pan) and swipe navigation ───
+  // PanResponder for swipe navigation only (when not zoomed)
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        // Double-tap detection
-        const now = Date.now();
-        if (now - lastTap.current < 300) {
-          if (lastScale.current > 1) {
-            resetZoomRef.current();
-          } else {
-            Animated.spring(scale, {toValue: 2.5, useNativeDriver: true}).start();
-            lastScale.current = 2.5;
-          }
-        }
-        lastTap.current = now;
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only capture vertical swipes when not zoomed
+        if (isZoomedRef.current) return false;
+        return Math.abs(gestureState.dy) > 15 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
       },
-      onPanResponderMove: (evt, gestureState) => {
-        const touches = evt.nativeEvent.touches;
-        if (touches.length === 2) {
-          const currentDistance = getTouchDistance(touches);
-          if (initialPinchDistance.current === 0) {
-            // Pinch just started — record baseline
-            initialPinchDistance.current = currentDistance;
-            pinchScaleStart.current = lastScale.current;
-          } else {
-            // Scale proportionally to finger spread
-            const ratio = currentDistance / initialPinchDistance.current;
-            const newScale = Math.max(1, Math.min(pinchScaleStart.current * ratio, 5));
-            scale.setValue(newScale);
-            lastScale.current = newScale;
-          }
-        } else {
-          // Reset pinch baseline when not 2 fingers
-          initialPinchDistance.current = 0;
-
-          if (lastScale.current > 1) {
-            // Pan when zoomed in
-            const newX = lastTranslateX.current + gestureState.dx;
-            const newY = lastTranslateY.current + gestureState.dy;
-            translateX.setValue(newX);
-            translateY.setValue(newY);
-          } else {
-            // Swipe navigation when not zoomed
-            const isVertical = Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
-            if (isVertical && Math.abs(gestureState.dy) > 10) {
-              swipeTranslateY.setValue(gestureState.dy * 0.5);
-            }
-          }
+      onPanResponderMove: (_, gestureState) => {
+        if (!isZoomedRef.current) {
+          swipeTranslateY.setValue(gestureState.dy * 0.5);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
-        // Reset pinch tracking
-        initialPinchDistance.current = 0;
-
-        // Persist translate values for next gesture
-        lastTranslateX.current += gestureState.dx * (lastScale.current > 1 ? 1 : 0);
-        lastTranslateY.current += gestureState.dy * (lastScale.current > 1 ? 1 : 0);
-
-        if (lastScale.current <= 1) {
-          // Snap back zoom if under-zoomed
-          resetZoomRef.current();
-
-          // Handle swipe navigation
-          if (gestureState.dy < -SWIPE_THRESHOLD) {
-            goToNextRef.current();
-          } else if (gestureState.dy > SWIPE_THRESHOLD) {
-            goToPrevRef.current();
-          } else {
-            Animated.spring(swipeTranslateY, {toValue: 0, useNativeDriver: true}).start();
-          }
+        if (gestureState.dy < -SWIPE_THRESHOLD) {
+          goToNextRef.current();
+        } else if (gestureState.dy > SWIPE_THRESHOLD) {
+          goToPrevRef.current();
+        } else {
+          Animated.spring(swipeTranslateY, {toValue: 0, useNativeDriver: true}).start();
         }
       },
     }),
@@ -365,23 +284,31 @@ const PhotoDetailScreen: React.FC = () => {
             opacity: swipeOpacity,
           },
         ]}>
-        <Animated.View
-          style={[
-            styles.zoomContainer,
-            {
-              transform: [
-                {scale: scale},
-                {translateX: translateX},
-                {translateY: translateY},
-              ],
-            },
-          ]}>
-          <Image
-            source={{uri: currentPhoto.fullUrl}}
-            style={styles.fullImage}
+        <GestureHandlerRootView style={styles.gestureRoot}>
+          <ImageZoom
+            key={currentPhoto.id}
+            uri={currentPhoto.fullUrl}
+            minScale={1}
+            maxScale={5}
+            doubleTapScale={2.5}
+            minPanPointers={1}
+            maxPanPointers={2}
+            isPanEnabled={true}
+            isPinchEnabled={true}
+            isDoubleTapEnabled={true}
+            onInteractionStart={() => setIsZoomed(true)}
+            onPinchEnd={(event) => {
+              if (event.scale <= 1.05) {
+                setIsZoomed(false);
+              }
+            }}
+            onDoubleTap={(event) => {
+              setIsZoomed(event.type !== 'zoomOut');
+            }}
+            style={styles.imageZoom}
             resizeMode="contain"
           />
-        </Animated.View>
+        </GestureHandlerRootView>
       </Animated.View>
 
       {/* Before image overlay (shown while holding compare button) */}
@@ -422,31 +349,28 @@ const PhotoDetailScreen: React.FC = () => {
             {currentIndex + 1} / {photos.length}
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.resetButton}
-          onPress={resetZoom}
-          activeOpacity={0.7}>
-          <Ionicons name="contract-outline" size={20} color="#fff" />
-        </TouchableOpacity>
+        <View style={{width: 40}} />
       </View>
 
       {/* Swipe hints */}
-      {currentIndex > 0 && (
+      {!isZoomed && currentIndex > 0 && (
         <View style={styles.swipeHintTop}>
           <Ionicons name="chevron-up" size={22} color="rgba(255,255,255,0.5)" />
         </View>
       )}
-      {currentIndex < photos.length - 1 && (
+      {!isZoomed && currentIndex < photos.length - 1 && (
         <View style={styles.swipeHintBottom}>
           <Ionicons name="chevron-down" size={22} color="rgba(255,255,255,0.5)" />
         </View>
       )}
 
       {/* Zoom hint */}
-      <View style={styles.zoomHint}>
-        <Ionicons name="search-outline" size={12} color="rgba(255,255,255,0.5)" />
-        <Text style={styles.zoomHintText}>Pinch or double-tap to zoom</Text>
-      </View>
+      {!isZoomed && (
+        <View style={styles.zoomHint}>
+          <Ionicons name="search-outline" size={12} color="rgba(255,255,255,0.5)" />
+          <Text style={styles.zoomHintText}>Pinch or double-tap to zoom</Text>
+        </View>
+      )}
 
       {/* Overlaid action buttons */}
       <View style={styles.actionsOverlay}>
@@ -515,23 +439,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-  // Full-screen image area
   fullScreenArea: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  zoomContainer: {
+  gestureRoot: {
+    flex: 1,
+  },
+  imageZoom: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   fullImage: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
   },
-  // Overlaid header
   headerOverlay: {
     position: 'absolute',
     top: 0,
@@ -564,15 +485,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  resetButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  // Swipe hints
   swipeHintTop: {
     position: 'absolute',
     top: 100,
@@ -589,7 +501,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 5,
   },
-  // Zoom hint
   zoomHint: {
     position: 'absolute',
     top: 100,
@@ -605,7 +516,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.5)',
     fontSize: 11,
   },
-  // Overlaid actions
   actionsOverlay: {
     position: 'absolute',
     bottom: 0,
@@ -641,7 +551,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  // Before/after comparison
   beforeOverlay: {
     position: 'absolute',
     top: 0,

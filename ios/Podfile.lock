@@ -3020,6 +3020,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - RNImageColors (1.5.2):
+    - React-Core
   - RNImageCropPicker (0.51.1):
     - boost
     - DoubleConversion
@@ -3538,6 +3540,7 @@ DEPENDENCIES:
   - RNFS (from `../node_modules/react-native-fs`)
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - "RNGoogleSignin (from `../node_modules/@react-native-google-signin/google-signin`)"
+  - RNImageColors (from `../node_modules/react-native-image-colors`)
   - RNImageCropPicker (from `../node_modules/react-native-image-crop-picker`)
   - RNReactNativeHapticFeedback (from `../node_modules/react-native-haptic-feedback`)
   - RNReanimated (from `../node_modules/react-native-reanimated`)
@@ -3759,6 +3762,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-gesture-handler"
   RNGoogleSignin:
     :path: "../node_modules/@react-native-google-signin/google-signin"
+  RNImageColors:
+    :path: "../node_modules/react-native-image-colors"
   RNImageCropPicker:
     :path: "../node_modules/react-native-image-crop-picker"
   RNReactNativeHapticFeedback:
@@ -3791,7 +3796,7 @@ SPEC CHECKSUMS:
   GoogleUtilities: 00c88b9a86066ef77f0da2fab05f65d7768ed8e1
   GTMAppAuth: 217a876b249c3c585a54fd6f73e6b58c4f5c4238
   GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
-  hermes-engine: 8099d97187c6e0f8d67316085a33f66d30d2b457
+  hermes-engine: 7e5a1d77fd1ba0ec63da151f64764c1a572f41e3
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
   lottie-ios: a881093fab623c467d3bce374367755c272bdd59
   lottie-react-native: 691b8363e8c591fb78a78254ff2517258891456b
@@ -3883,6 +3888,7 @@ SPEC CHECKSUMS:
   RNFS: 89de7d7f4c0f6bafa05343c578f61118c8282ed8
   RNGestureHandler: cd4be101cfa17ea6bbd438710caa02e286a84381
   RNGoogleSignin: 4122717989e2544988cb4cec3e917da3ebc969a5
+  RNImageColors: 977420bca17290f111104bcfcbfb698982cbfbba
   RNImageCropPicker: 5fd4ceaead64d8c53c787e4e559004f97bc76df7
   RNReactNativeHapticFeedback: be4f1b4bf0398c30b59b76ed92ecb0a2ff3a69c6
   RNReanimated: 9584a0e858e678d4859eb139b2e67fd92115cfb0

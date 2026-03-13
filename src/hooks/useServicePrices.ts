@@ -16,6 +16,7 @@ interface UseServicePricesResult {
   restorePrice: ServicePrice | undefined;
   animationPrice: ServicePrice | undefined;
   refinePrice: ServicePrice | undefined;
+  socialContentPrice: ServicePrice | undefined;
 }
 
 export const useServicePrices = (): UseServicePricesResult => {
@@ -52,5 +53,6 @@ export const useServicePrices = (): UseServicePricesResult => {
     restorePrice: prices.find(p => p.serviceKey?.toLowerCase() === 'restore_photo'),
     animationPrice: prices.find(p => p.serviceKey?.toLowerCase() === 'animation'),
     refinePrice: prices.find(p => p.serviceKey?.toLowerCase() === 'refine'),
+    socialContentPrice: prices.find(p => p.serviceKey?.toLowerCase() === 'social_content'),
   };
 };

@@ -1,8 +1,9 @@
-import React, {useMemo, useState} from 'react';
+import React, {useMemo, useRef, useState, useEffect} from 'react';
 import {
   View,
   ScrollView,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   Image,
   Text,
   StyleSheet,
@@ -10,14 +11,25 @@ import {
   Modal,
   FlatList,
   ActivityIndicator,
+  Animated,
+  Platform,
+  UIManager,
+  LayoutAnimation,
 } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import {Sight, isNewSight, SightCategory} from '../constants/sights';
 import PriceBadge from './PriceBadge';
 import {useAppSelector, useAppDispatch} from '../store/hooks';
-import {setSelectedSight, togglePinSight, setSelectedCategory} from '../store/slices/transformSlice';
+import {setSelectedSight, togglePinSight, setSelectedCategory, toggleScenarioPanel, setScenarioPanelExpanded} from '../store/slices/transformSlice';
 import {useTheme} from '../theme/ThemeContext';
 import {usePrompts, CategoryWithIcon} from '../hooks/usePrompts';
 import {triggerHaptic} from '../utils/haptics';
+import {ScenarioPanelStorage} from '../utils/storage';
 
 // Featured category IDs to show initially
 const FEATURED_CATEGORY_IDS = ['all', 'sights', 'celebrity', 'cartoon', 'effects', 'eras', 'art'];
@@ -60,11 +72,22 @@ const SightsBar: React.FC = () => {
   const selectedSight = useAppSelector(state => state.transform.selectedSight);
   const pinnedSightIds = useAppSelector(state => state.transform.pinnedSightIds);
   const selectedCategory = useAppSelector(state => state.transform.selectedCategory);
+  const sectionExpanded = useAppSelector(state => state.transform.scenarioPanelExpanded);
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalCategory, setModalCategory] = useState<SightCategory | 'all'>('all');
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [pinModalSight, setPinModalSight] = useState<Sight | null>(null);
+
+  // Restore persisted panel state on mount
+  useEffect(() => {
+    ScenarioPanelStorage.getExpanded().then(saved => {
+      if (saved !== null) {
+        dispatch(setScenarioPanelExpanded(saved));
+      }
+      // null means first install — keep default (true)
+    });
+  }, [dispatch]);
 
   // Fetch prompts from API (with fallback to local sights)
   const {sights: SIGHTS, categories: CATEGORIES, isLoading} = usePrompts(true);
@@ -150,86 +173,144 @@ const SightsBar: React.FC = () => {
     dispatch(togglePinSight(sight.id));
   };
 
+  const renderPinContent = () => {
+    if (!pinModalSight) return null;
+    const isPinned = pinnedSightIds.includes(pinModalSight.id);
+    return (
+      <>
+        <View style={[styles.pinModalImageContainer, {backgroundColor: colors.backgroundTertiary}]}>
+          <Image
+            source={{uri: pinModalSight.thumbnailUrl}}
+            style={styles.pinModalImage}
+            resizeMode="cover"
+          />
+          <View style={[
+            styles.pinModalIconBadge,
+            {backgroundColor: isPinned ? colors.warning : colors.primary}
+          ]}>
+            <Text style={styles.pinModalIconText}>
+              {isPinned ? '📌' : '📍'}
+            </Text>
+          </View>
+        </View>
+        <Text style={[styles.pinModalTitle, {color: colors.textPrimary}]}>
+          {isPinned ? 'Unpin Template' : 'Pin Template'}
+        </Text>
+        <Text style={[styles.pinModalTemplateName, {color: colors.primary}]}>
+          "{pinModalSight.name}"
+        </Text>
+        <Text style={[styles.pinModalDescription, {color: colors.textSecondary}]}>
+          {isPinned
+            ? 'Remove this template from your pinned favorites?'
+            : 'Pin this template to keep it at the front for quick access.'}
+        </Text>
+        <View style={styles.pinModalButtons}>
+          <TouchableOpacity
+            style={[styles.pinModalCancelButton, {borderColor: colors.border}]}
+            onPress={handlePinCancel}
+            activeOpacity={0.7}>
+            <Text style={[styles.pinModalCancelText, {color: colors.textSecondary}]}>
+              Cancel
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.pinModalConfirmButton,
+              {backgroundColor: isPinned ? colors.error : colors.primary}
+            ]}
+            onPress={handlePinConfirm}
+            activeOpacity={0.8}>
+            <Text style={styles.pinModalConfirmText}>
+              {isPinned ? 'Unpin' : 'Pin'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </>
+    );
+  };
+
   const handleCategoryPress = (categoryId: SightCategory | 'all') => {
     dispatch(setSelectedCategory(categoryId));
   };
 
+  const expandAnim = useRef(new Animated.Value(sectionExpanded ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(expandAnim, {
+      toValue: sectionExpanded ? 1 : 0,
+      duration: 450,
+      useNativeDriver: false,
+    }).start();
+  }, [sectionExpanded, expandAnim]);
+
+  const toggleSection = () => {
+    const newValue = !sectionExpanded;
+    dispatch(toggleScenarioPanel());
+    ScenarioPanelStorage.setExpanded(newValue);
+  };
+
+  const selectedCategoryObj = CATEGORIES.find(c => c.id === selectedCategory);
+
   return (
     <View style={[styles.container, {backgroundColor: colors.background, paddingVertical: isSmallPhone ? 8 : 16}]}>
-      <View style={[styles.titleContainer, {marginBottom: isSmallPhone ? 6 : 12}]}>
-        <Text style={[styles.title, {color: colors.textPrimary, fontSize: titleFontSize}]}>
-          Choose scenario
-        </Text>
-        {isLoading ? (
-          <ActivityIndicator size="small" color={colors.primary} style={{marginLeft: 8}} />
-        ) : (
-          <View style={[styles.badge, {backgroundColor: colors.primary + '20'}]}>
-            <Text style={[styles.badgeText, {color: colors.primary}]}>
-              {filteredAndSortedSights.length} scenarios
-            </Text>
-          </View>
-        )}
-        {pinnedSightIds.length > 0 && (
-          <View style={[styles.badge, {backgroundColor: colors.warning + '20'}]}>
-            <Text style={[styles.badgeText, {color: colors.warning}]}>
-              {pinnedSightIds.length} pinned
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Category Filter */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.filterContainer, {marginBottom: isSmallPhone ? 8 : 16}]}>
-        {(showAllCategories ? CATEGORIES : CATEGORIES.filter(c => FEATURED_CATEGORY_IDS.includes(c.id))).map(category => {
-          const isActive = selectedCategory === category.id;
-          return (
-            <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.filterButton,
-                {
-                  backgroundColor: isActive ? colors.primary : colors.backgroundTertiary,
-                  borderColor: isActive ? colors.primary : colors.border,
-                },
-              ]}
-              onPress={() => handleCategoryPress(category.id)}
-              activeOpacity={0.7}>
-              <Text style={styles.filterIcon}>{getCategoryEmoji(category.id)}</Text>
-              <Text
-                style={[
-                  styles.filterText,
-                  {color: isActive ? '#fff' : colors.textSecondary},
-                ]}>
-                {category.label}
+      {/* Header — always visible, tappable to expand/collapse */}
+      <TouchableOpacity
+        style={[styles.titleContainer, {marginBottom: sectionExpanded ? (isSmallPhone ? 6 : 12) : 0, paddingVertical: sectionExpanded ? 0 : 10}]}
+        onPress={toggleSection}
+        activeOpacity={0.7}>
+        <View style={styles.titleLeft}>
+          <Text style={[styles.title, {color: colors.textPrimary, fontSize: titleFontSize}]}>
+            Choose scenario
+          </Text>
+          {isLoading ? (
+            <ActivityIndicator size="small" color={colors.primary} style={{marginLeft: 8}} />
+          ) : (
+            <View style={[styles.badge, {backgroundColor: colors.primary + '20'}]}>
+              <Text style={[styles.badgeText, {color: colors.primary, textDecorationLine: 'underline'}]}>
+                {filteredAndSortedSights.length} scenarios
               </Text>
-            </TouchableOpacity>
-          );
-        })}
-        {/* Show More / Show Less Button - only show if there are additional categories */}
-        {(showAllCategories || CATEGORIES.length > FEATURED_CATEGORY_IDS.length) && (
-          <TouchableOpacity
-            style={[
-              styles.showMoreButton,
-              {
-                backgroundColor: colors.backgroundTertiary,
-                borderColor: colors.primary,
-              },
-            ]}
-            onPress={() => setShowAllCategories(!showAllCategories)}
-            activeOpacity={0.7}>
-            <Text style={[styles.showMoreText, {color: colors.primary}]}>
-              {showAllCategories ? 'Less' : `+${CATEGORIES.length - FEATURED_CATEGORY_IDS.length}`}
-            </Text>
-            <Text style={[styles.showMoreIcon, {color: colors.primary}]}>
-              {showAllCategories ? '◀' : '▶'}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </ScrollView>
+            </View>
+          )}
+          {pinnedSightIds.length > 0 && (
+            <View style={[styles.badge, {backgroundColor: colors.warning + '20'}]}>
+              <Text style={[styles.badgeText, {color: colors.warning}]}>
+                {pinnedSightIds.length} pinned
+              </Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.collapseToggle}>
+          {!sectionExpanded && selectedSight && (
+            <View style={[styles.collapsedPreview, {backgroundColor: colors.primary + '20'}]}>
+              <Image
+                source={{uri: selectedSight.thumbnailUrl}}
+                style={styles.collapsedPreviewImage}
+                resizeMode="cover"
+              />
+              <Text style={[styles.collapsedPreviewName, {color: colors.primary}]} numberOfLines={1}>
+                {selectedSight.name}
+              </Text>
+            </View>
+          )}
+          {!sectionExpanded && !selectedSight && (
+            <Text style={[styles.collapsedNoneText, {color: colors.textTertiary}]}>None</Text>
+          )}
+          <Ionicons
+            name={sectionExpanded ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={colors.primary}
+          />
+        </View>
+      </TouchableOpacity>
 
+      <Animated.View style={{
+        opacity: expandAnim,
+        maxHeight: expandAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, 500],
+        }),
+        overflow: 'hidden',
+      }}>
       {/* Sights List */}
       <ScrollView
         horizontal
@@ -394,6 +475,58 @@ const SightsBar: React.FC = () => {
         )}
       </ScrollView>
 
+      {/* Category Filter */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.filterContainer, {marginTop: isSmallPhone ? 8 : 12}]}>
+        {(showAllCategories ? CATEGORIES : CATEGORIES.filter(c => FEATURED_CATEGORY_IDS.includes(c.id))).map(category => {
+          const isActive = selectedCategory === category.id;
+          return (
+            <TouchableOpacity
+              key={category.id}
+              style={[
+                styles.filterButton,
+                {
+                  backgroundColor: isActive ? colors.primary : colors.backgroundTertiary,
+                  borderColor: isActive ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => handleCategoryPress(category.id)}
+              activeOpacity={0.7}>
+              <Text style={styles.filterIcon}>{getCategoryEmoji(category.id)}</Text>
+              <Text
+                style={[
+                  styles.filterText,
+                  {color: isActive ? '#fff' : colors.textSecondary},
+                ]}>
+                {category.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+        {(showAllCategories || CATEGORIES.length > FEATURED_CATEGORY_IDS.length) && (
+          <TouchableOpacity
+            style={[
+              styles.showMoreButton,
+              {
+                backgroundColor: colors.backgroundTertiary,
+                borderColor: colors.primary,
+              },
+            ]}
+            onPress={() => setShowAllCategories(!showAllCategories)}
+            activeOpacity={0.7}>
+            <Text style={[styles.showMoreText, {color: colors.primary}]}>
+              {showAllCategories ? 'Less' : `+${CATEGORIES.length - FEATURED_CATEGORY_IDS.length}`}
+            </Text>
+            <Text style={[styles.showMoreIcon, {color: colors.primary}]}>
+              {showAllCategories ? '◀' : '▶'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </ScrollView>
+      </Animated.View>
+
       {/* Destinations Modal */}
       <Modal
         visible={modalVisible}
@@ -528,95 +661,53 @@ const SightsBar: React.FC = () => {
               <Text style={styles.modalDoneButtonText}>Done</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
 
-      {/* Modern Pin/Unpin Modal */}
-      <Modal
-        visible={pinModalVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={handlePinCancel}>
-        <View style={styles.pinModalOverlay}>
-          <View style={[styles.pinModalContent, {backgroundColor: colors.cardBackground}]}>
-            {/* Template Preview */}
-            {pinModalSight && (
-              <>
-                <View style={[styles.pinModalImageContainer, {backgroundColor: colors.backgroundTertiary}]}>
-                  <Image
-                    source={{uri: pinModalSight.thumbnailUrl}}
-                    style={styles.pinModalImage}
-                    resizeMode="cover"
-                  />
-                  <View style={[
-                    styles.pinModalIconBadge,
-                    {backgroundColor: pinnedSightIds.includes(pinModalSight.id) ? colors.warning : colors.primary}
-                  ]}>
-                    <Text style={styles.pinModalIconText}>
-                      {pinnedSightIds.includes(pinModalSight.id) ? '📌' : '📍'}
-                    </Text>
+          {/* Pin overlay rendered inside All Scenarios modal */}
+          {pinModalVisible && pinModalSight && (
+            <TouchableWithoutFeedback onPress={handlePinCancel}>
+              <View style={[styles.pinModalOverlay, StyleSheet.absoluteFill]}>
+                <TouchableWithoutFeedback onPress={() => {}}>
+                  <View style={[styles.pinModalContent, {backgroundColor: colors.cardBackground}]}>
+                    {renderPinContent()}
                   </View>
-                </View>
-
-                {/* Title */}
-                <Text style={[styles.pinModalTitle, {color: colors.textPrimary}]}>
-                  {pinnedSightIds.includes(pinModalSight.id) ? 'Unpin Template' : 'Pin Template'}
-                </Text>
-
-                {/* Template Name */}
-                <Text style={[styles.pinModalTemplateName, {color: colors.primary}]}>
-                  "{pinModalSight.name}"
-                </Text>
-
-                {/* Description */}
-                <Text style={[styles.pinModalDescription, {color: colors.textSecondary}]}>
-                  {pinnedSightIds.includes(pinModalSight.id)
-                    ? 'Remove this template from your pinned favorites?'
-                    : 'Pin this template to keep it at the front for quick access.'}
-                </Text>
-
-                {/* Buttons */}
-                <View style={styles.pinModalButtons}>
-                  <TouchableOpacity
-                    style={[styles.pinModalCancelButton, {borderColor: colors.border}]}
-                    onPress={handlePinCancel}
-                    activeOpacity={0.7}>
-                    <Text style={[styles.pinModalCancelText, {color: colors.textSecondary}]}>
-                      Cancel
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.pinModalConfirmButton,
-                      {backgroundColor: pinnedSightIds.includes(pinModalSight.id) ? colors.error : colors.primary}
-                    ]}
-                    onPress={handlePinConfirm}
-                    activeOpacity={0.8}>
-                    <Text style={styles.pinModalConfirmText}>
-                      {pinnedSightIds.includes(pinModalSight.id) ? 'Unpin' : 'Pin'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </View>
+                </TouchableWithoutFeedback>
+              </View>
+            </TouchableWithoutFeedback>
+          )}
         </View>
       </Modal>
+
+      {/* Pin/Unpin Modal (standalone, when All Scenarios is not open) */}
+      {!modalVisible && (
+        <Modal
+          visible={pinModalVisible}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={handlePinCancel}>
+          <TouchableWithoutFeedback onPress={handlePinCancel}>
+            <View style={styles.pinModalOverlay}>
+              <TouchableWithoutFeedback onPress={() => {}}>
+                <View style={[styles.pinModalContent, {backgroundColor: colors.cardBackground}]}>
+                  {renderPinContent()}
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop: 16,
+    paddingTop: 8,
     paddingBottom: 6,
   },
   titleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    gap: 10,
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   title: {
     fontWeight: '700',
@@ -632,8 +723,42 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filterContainer: {
-    paddingHorizontal: 16,
     gap: 8,
+  },
+  titleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+    flex: 1,
+  },
+  collapseToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  collapsedPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    gap: 8,
+    maxWidth: 160,
+  },
+  collapsedPreviewImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+  },
+  collapsedPreviewName: {
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  collapsedNoneText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   filterButton: {
     flexDirection: 'row',
@@ -657,7 +782,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   scrollContent: {
-    paddingHorizontal: 16,
   },
   emptyState: {
     flex: 1,

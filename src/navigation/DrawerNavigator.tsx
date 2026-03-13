@@ -332,7 +332,7 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
 
       {/* App Version */}
       <View style={styles.footer}>
-        <Logo size={32} />
+        <Logo size={32} showBorder={false} />
         <Text style={styles.versionText}>MagiShot v1.0.0</Text>
       </View>
       <PalettePickerModal

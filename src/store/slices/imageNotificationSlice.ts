@@ -147,6 +147,16 @@ const imageNotificationSlice = createSlice({
         }
       });
     },
+    clearStaleImageJobs(state) {
+      // Remove pending/processing jobs — fresh gallery data will have the real status
+      Object.keys(state.jobs).forEach(id => {
+        const job = state.jobs[id];
+        if (job.status === 'pending' || job.status === 'processing') {
+          delete state.jobs[id];
+        }
+      });
+      state.unreadCount = recalcUnread(state);
+    },
     clearAllImageNotifications() {
       return initialState;
     },
@@ -164,6 +174,7 @@ export const {
   setSynthesizeProcessing,
   setSynthesizeReady,
   setSynthesizeFailed,
+  clearStaleImageJobs,
   clearAllImageNotifications,
 } = imageNotificationSlice.actions;
 

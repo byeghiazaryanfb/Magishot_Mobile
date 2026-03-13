@@ -448,26 +448,36 @@ const TryOnArea: React.FC = () => {
               style={[
                 styles.tryOnButtonGradient,
                 !canGenerate && styles.tryOnButtonDisabled,
+                isGenerating && {shadowOpacity: 0},
               ]}>
               <TouchableOpacity
                 style={styles.tryOnButtonTouchable}
                 onPress={handleTryOn}
-                disabled={!canGenerate}
-                activeOpacity={0.9}>
-                <Text
-                  style={[
-                    styles.tryOnButtonText,
-                    {color: canGenerate ? '#fff' : colors.textTertiary},
-                  ]}>
-                  {'✨ Try It On'}
-                  {canGenerate ? (
-                    tryOnPrice && !tryOnPrice.isFree && tryOnPrice.estimatedCoins > 0 ? (
-                      <Text style={{color: '#FFD700'}}>{` (${tryOnPrice.estimatedCoins} ★)`}</Text>
-                    ) : (
-                      <Text style={{color: '#22C55E'}}>{' (Free)'}</Text>
-                    )
-                  ) : null}
-                </Text>
+                disabled={!canGenerate || isGenerating}
+                activeOpacity={0.7}>
+                {isGenerating ? (
+                  <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={[styles.tryOnButtonText, {color: '#fff'}]}>
+                      Submitting...
+                    </Text>
+                  </View>
+                ) : (
+                  <Text
+                    style={[
+                      styles.tryOnButtonText,
+                      {color: canGenerate ? '#fff' : colors.textTertiary},
+                    ]}>
+                    {'✨ Try It On'}
+                    {canGenerate ? (
+                      tryOnPrice && !tryOnPrice.isFree && tryOnPrice.estimatedCoins > 0 ? (
+                        <Text style={{color: '#FFD700'}}>{` (${tryOnPrice.estimatedCoins} ★)`}</Text>
+                      ) : (
+                        <Text style={{color: '#22C55E'}}>{' (Free)'}</Text>
+                      )
+                    ) : null}
+                  </Text>
+                )}
               </TouchableOpacity>
             </LinearGradient>
           </WalkthroughableView>

@@ -21,6 +21,7 @@ interface AppState {
   unopenedPhotosCount: number;
   unplayedVideosCount: number;
   viewedPhotoIds: Record<string, boolean>;
+  businessMode: boolean;
 }
 
 const initialState: AppState = {
@@ -32,6 +33,7 @@ const initialState: AppState = {
   unopenedPhotosCount: 0,
   unplayedVideosCount: 0,
   viewedPhotoIds: {},
+  businessMode: false,
 };
 
 export const fetchUnreadCounts = createAsyncThunk(
@@ -70,6 +72,9 @@ const appSlice = createSlice({
     markPhotoViewed: (state, action: PayloadAction<string>) => {
       state.viewedPhotoIds[action.payload] = true;
     },
+    toggleBusinessMode: state => {
+      state.businessMode = !state.businessMode;
+    },
   },
   extraReducers: builder => {
     builder.addCase(fetchUnreadCounts.fulfilled, (state, action) => {
@@ -87,6 +92,7 @@ export const {
   setTheme,
   setNetworkStatus,
   markPhotoViewed,
+  toggleBusinessMode,
 } = appSlice.actions;
 
 export default appSlice.reducer;

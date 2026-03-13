@@ -11,6 +11,7 @@ const STORAGE_KEYS = {
   VIEWED_VIDEO_IDS: '@picgen:viewedVideoIds',
   CACHED_PHOTOS: '@picgen:cachedPhotos',
   CACHED_VIDEOS: '@picgen:cachedVideos',
+  SCENARIO_PANEL_EXPANDED: '@picgen:scenarioPanelExpanded',
 };
 
 export interface HistoryItem {
@@ -281,6 +282,26 @@ export const GalleryCache = {
       await AsyncStorage.removeItem(STORAGE_KEYS.CACHED_VIDEOS);
     } catch (error) {
       console.warn('Failed to clear cached videos:', error);
+    }
+  },
+};
+
+export const ScenarioPanelStorage = {
+  async getExpanded(): Promise<boolean | null> {
+    try {
+      const value = await AsyncStorage.getItem(STORAGE_KEYS.SCENARIO_PANEL_EXPANDED);
+      if (value === null) return null; // never set — first install
+      return value === 'true';
+    } catch {
+      return null;
+    }
+  },
+
+  async setExpanded(expanded: boolean): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.SCENARIO_PANEL_EXPANDED, String(expanded));
+    } catch (error) {
+      console.warn('Failed to save scenario panel state:', error);
     }
   },
 };
