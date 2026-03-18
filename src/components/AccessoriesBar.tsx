@@ -25,7 +25,7 @@ import PriceBadge from './PriceBadge';
 import {triggerHaptic} from '../utils/haptics';
 
 // Number of preview accessories to show in collapsed stack
-const PREVIEW_COUNT = 4;
+const PREVIEW_COUNT = 5;
 
 // Storage key for recently used effects
 const RECENT_EFFECTS_KEY = '@recent_effects';
@@ -78,6 +78,30 @@ const getFullImageUrl = (imageUrl?: string): string | null => {
     return `${config.apiBaseUrl}${imageUrl}`;
   }
   return `${config.apiBaseUrl}/${imageUrl}`;
+};
+
+// Small helper: shows a light spinner until the image has loaded
+const ImageWithLoader: React.FC<{
+  uri: string;
+  style: any;
+}> = ({uri, style}) => {
+  const {colors} = useTheme();
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <View style={[style, {overflow: 'hidden'}]}>
+      {!loaded && (
+        <View style={[StyleSheet.absoluteFill, {justifyContent: 'center', alignItems: 'center'}]}>
+          <ActivityIndicator size="small" color={colors.primary} style={{opacity: 0.4}} />
+        </View>
+      )}
+      <Image
+        source={{uri}}
+        style={[StyleSheet.absoluteFill, {borderRadius: 12, opacity: loaded ? 1 : 0}]}
+        resizeMode="cover"
+        onLoad={() => setLoaded(true)}
+      />
+    </View>
+  );
 };
 
 export interface AccessoriesBarRef {
@@ -229,9 +253,37 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
     return activeTab === 'appearance' ? appearanceItems : accessoryItems;
   }, [activeTab, appearanceItems, accessoryItems, hasTypeFiltering, accessories, recentEffects]);
 
-  // Memoized preview accessories (first 4)
+  // Curated preview accessories:
+  // 1st Accessory (non-crown), Headphones, "Complete Makeup", "Blunt Bob", "Wavy" from Hairstyles
   const previewAccessories = useMemo(() => {
-    return accessories.slice(0, PREVIEW_COUNT);
+    const findByLabel = (label: string) =>
+      findItemById(label.toLowerCase().replace(/\s+/g, '-'), accessories)
+      || accessories.find(a => a.label.toLowerCase().includes(label.toLowerCase()))
+      || accessories.flatMap(a => a.children || []).find(c => c.label.toLowerCase().includes(label.toLowerCase()))
+      || accessories.flatMap(a => (a.children || []).flatMap(c => c.children || [])).find(c => c.label.toLowerCase().includes(label.toLowerCase()));
+
+    const accessoryTypeItems = accessories.filter(item => item.type === AccessoryType.Accessory);
+    const firstAccessory = accessoryTypeItems.find(a => !a.label.toLowerCase().includes('crown'));
+    const headphones = findByLabel('headphone');
+    const completeMakeup = findByLabel('complete makeup');
+    const bluntBob = findByLabel('blunt bob');
+    const wavy = findByLabel('wavy');
+
+    const result: AccessoryItem[] = [];
+    if (firstAccessory) result.push(firstAccessory);
+    if (headphones) result.push(headphones);
+    if (completeMakeup) result.push(completeMakeup);
+    if (bluntBob) result.push(bluntBob);
+    if (wavy) result.push(wavy);
+
+    // Fallback: fill remaining slots if some weren't found
+    if (result.length < PREVIEW_COUNT) {
+      for (const item of accessories) {
+        if (result.length >= PREVIEW_COUNT) break;
+        if (!result.find(r => r.id === item.id)) result.push(item);
+      }
+    }
+    return result.slice(0, PREVIEW_COUNT);
   }, [accessories]);
 
   // Memoized featured accessories (first 8 from current tab)
@@ -438,10 +490,9 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
         ]}>
         <View style={styles.gridItemContent}>
           {imageUrl ? (
-            <Image
-              source={{uri: imageUrl}}
+            <ImageWithLoader
+              uri={imageUrl}
               style={[styles.gridItemImage, disabled && styles.disabledImage]}
-              resizeMode="cover"
             />
           ) : (
             <Text style={[styles.gridItemIcon, disabled && styles.disabledText]}>{item.icon}</Text>
@@ -690,7 +741,7 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
         transparent={true}
         onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, {backgroundColor: colors.cardBackground, height: height * 0.7}]}>
+          <View style={[styles.modalContent, {backgroundColor: colors.cardBackground, height: height * 0.85}]}>
             {/* Modal Header */}
             <View style={[styles.modalHeader, {borderBottomColor: colors.border}]}>
               <Text style={[styles.modalTitle, {color: colors.textPrimary}]}>
@@ -725,7 +776,7 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
                     setShowAllCategories(false);
                   }}
                   activeOpacity={0.7}>
-                  <Text style={styles.tabIcon}>👤</Text>
+                  {/* <Text style={styles.tabIcon}>👤</Text> */}
                   <Text
                     style={[
                       styles.tabText,
@@ -747,7 +798,7 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
                     setShowAllCategories(false);
                   }}
                   activeOpacity={0.7}>
-                  <Text style={styles.tabIcon}>🎩</Text>
+                  {/* <Text style={styles.tabIcon}>🎩</Text> */}
                   <Text
                     style={[
                       styles.tabText,
@@ -769,7 +820,7 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
                     setShowAllCategories(false);
                   }}
                   activeOpacity={0.7}>
-                  <Text style={styles.tabIcon}>🕐</Text>
+                  {/* <Text style={styles.tabIcon}>🕐</Text> */}
                   <Text
                     style={[
                       styles.tabText,
@@ -794,6 +845,24 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
             )}
 
             {/* Grid */}
+            {isLoadingAccessories && activeTab !== 'recent' ? (
+              <View style={styles.gridContent}>
+                {[0, 1, 2].map(rowIdx => (
+                  <View key={rowIdx} style={styles.skeletonRow}>
+                    {[0, 1, 2, 3].map(colIdx => (
+                      <View
+                        key={colIdx}
+                        style={[
+                          styles.skeletonTile,
+                          {backgroundColor: colors.backgroundTertiary},
+                        ]}>
+                        <ActivityIndicator size="small" color={colors.primary} style={{opacity: 0.4}} />
+                      </View>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            ) : (
             <FlatList
               data={getCurrentItems()}
               renderItem={renderAccessoryItem}
@@ -817,7 +886,7 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
               ListEmptyComponent={
                 activeTab === 'recent' ? (
                   <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateIcon}>🕐</Text>
+                    {/* <Text style={styles.emptyStateIcon}>🕐</Text> */}
                     <Text style={[styles.emptyStateTitle, {color: colors.textPrimary}]}>
                       No Recent Effects
                     </Text>
@@ -849,6 +918,7 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
                 ) : null
               }
             />
+            )}
 
             {/* Done Button */}
             <TouchableOpacity
@@ -1112,6 +1182,18 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 2,
     overflow: 'hidden',
+  },
+  skeletonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  skeletonTile: {
+    flex: 1,
+    aspectRatio: 0.85,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   gridItemContent: {
     flex: 1,

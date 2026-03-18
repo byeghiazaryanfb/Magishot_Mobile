@@ -1,6 +1,7 @@
 import Share from 'react-native-share';
 import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import {Linking, Alert} from 'react-native';
+import {requestPhotoLibraryPermission} from './permissions';
 
 export type SharePlatform = 'instagram' | 'tiktok' | 'generic';
 
@@ -21,6 +22,11 @@ async function saveAndOpenApp(
   options: ShareToSocialOptions,
 ): Promise<void> {
   const {fileUri, type = 'image/jpeg'} = options;
+
+  const hasPermission = await requestPhotoLibraryPermission();
+  if (!hasPermission) {
+    throw new Error('Photo library permission denied');
+  }
 
   await CameraRoll.saveAsset(fileUri, {
     type: type.startsWith('video') ? 'video' : 'photo',

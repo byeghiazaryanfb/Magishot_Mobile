@@ -4,12 +4,10 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   Platform,
   ActivityIndicator,
   Share,
   Linking,
-  PermissionsAndroid,
 } from 'react-native';
 import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -20,6 +18,7 @@ import GradientButton from '../components/GradientButton';
 import CustomDialog from '../components/CustomDialog';
 import RNFetchBlob from 'rn-fetch-blob';
 import {CameraRoll} from '@react-native-camera-roll/camera-roll';
+import {requestPhotoLibraryPermission} from '../utils/permissions';
 
 interface VideoResult {
   videoUrl: string;
@@ -80,34 +79,22 @@ const VideoResultScreen: React.FC = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const requestSavePermission = async (): Promise<boolean> => {
-    if (Platform.OS === 'ios') {
-      try {
-        await CameraRoll.saveAsset('', {type: 'video'});
-      } catch {
-        // This will fail but triggers the permission prompt if not yet asked.
-        // If already denied, we need to direct the user to Settings.
-      }
-      // Try a real check — attempt is the only reliable way on iOS
-      return true;
-    } else {
-      const version = Platform.Version as number;
-      if (version >= 33) return true; // Android 13+ doesn't need WRITE_EXTERNAL_STORAGE
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-        {
-          title: 'Storage Permission',
-          message: 'App needs access to save videos to your device.',
-          buttonPositive: 'Allow',
-        },
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
-    }
-  };
-
   const handleDownload = async () => {
     try {
       setIsSaving(true);
+
+      const hasPermission = await requestPhotoLibraryPermission();
+      if (!hasPermission) {
+        setDialog({
+          visible: true,
+          icon: 'lock-closed',
+          iconColor: '#f59e0b',
+          title: 'Permission Required',
+          message: 'Please allow photo library access in Settings to save videos.',
+          type: 'permission',
+        });
+        return;
+      }
 
       const {config, fs} = RNFetchBlob;
       const date = new Date();

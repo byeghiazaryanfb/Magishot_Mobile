@@ -19,6 +19,7 @@ import RNFS from 'react-native-fs';
 import {useTheme} from '../theme/ThemeContext';
 import CustomDialog from './CustomDialog';
 import {useAppSelector} from '../store/hooks';
+import {requestPhotoLibraryPermission} from '../utils/permissions';
 
 interface AnimateResultModalProps {
   visible: boolean;
@@ -105,6 +106,20 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
           fileCache: true,
           path: cachePath,
         }).fetch('GET', videoResult.videoUrl);
+
+        const hasPermission = await requestPhotoLibraryPermission();
+        if (!hasPermission) {
+          setDialog({
+            visible: true,
+            icon: 'lock-closed',
+            iconColor: '#f59e0b',
+            title: 'Permission Required',
+            message: 'Please allow photo library access in Settings to save videos.',
+            type: 'permission',
+          });
+          await fs.unlink(res.path());
+          return;
+        }
 
         await CameraRoll.saveAsset(res.path(), {type: 'video'});
         await fs.unlink(res.path());

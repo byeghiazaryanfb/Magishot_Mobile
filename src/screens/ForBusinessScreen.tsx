@@ -21,8 +21,10 @@ import Logo from '../components/Logo';
 import CustomDialog from '../components/CustomDialog';
 import FullScreenImageModal from '../components/FullScreenImageModal';
 import PhotoPickerModal from '../components/PhotoPickerModal';
+import WebImagePickerModal from '../components/WebImagePickerModal';
 import TemplateComposerModal from '../components/TemplateComposerModal';
 import {ImageAsset} from '../services/imageTransform';
+import RNFS from 'react-native-fs';
 import {addPendingImageJob} from '../store/slices/imageNotificationSlice';
 import {triggerHaptic} from '../utils/haptics';
 
@@ -57,7 +59,7 @@ interface MobileAppTemplate {
 const ForBusinessScreen: React.FC = () => {
   const navigation = useNavigation();
   const dispatch = useAppDispatch();
-  const {colors} = useTheme();
+  const {colors, isDark} = useTheme();
   const {width} = useWindowDimensions();
   const {unopenedPhotosCount, unplayedVideosCount} = useAppSelector(
     state => state.app,
@@ -85,6 +87,7 @@ const ForBusinessScreen: React.FC = () => {
   const [peekItem, setPeekItem] = useState<{name: string; thumbnailUrl: string | null} | null>(null);
   const [photoRequired, setPhotoRequired] = useState(false);
   const [showFullScreen, setShowFullScreen] = useState(false);
+  const [showWebPicker, setShowWebPicker] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const isTablet = width >= 768;
@@ -230,6 +233,29 @@ const ForBusinessScreen: React.FC = () => {
     setProductPhoto(null);
   };
 
+  const handleWebImageSelect = async (imageUrl: string) => {
+    setShowWebPicker(false);
+    try {
+      const fileName = `web_product_${Date.now()}.jpg`;
+      const filePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
+      const downloadResult = await RNFS.downloadFile({
+        fromUrl: imageUrl,
+        toFile: filePath,
+      }).promise;
+      if (downloadResult.statusCode !== 200) {
+        throw new Error('Download failed');
+      }
+      const webPhoto: ImageAsset = {
+        uri: `file://${filePath}`,
+        type: 'image/jpeg',
+        fileName,
+      };
+      setProductPhoto(webPhoto);
+      setPhotoRequired(false);
+    } catch {
+      setGenerateError('Failed to download image from web. Please try again.');
+    }
+  };
 
   return (
     <View style={[styles.container, {backgroundColor: colors.background}]}>
@@ -237,89 +263,28 @@ const ForBusinessScreen: React.FC = () => {
       <View
         style={[
           styles.header,
-          {
-            backgroundColor: colors.backgroundSecondary,
-            paddingHorizontal: headerPadding,
-          },
+          {backgroundColor: colors.backgroundSecondary},
         ]}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={openDrawer}
-            activeOpacity={0.7}>
-            <Ionicons
-              name="menu"
-              size={themeIconSize}
-              color={colors.textPrimary}
-            />
-          </TouchableOpacity>
-          <Logo size={isTablet ? 140 : 100} />
+        <TouchableOpacity
+          style={[
+            styles.backButton,
+            {
+              backgroundColor: isDark
+                ? 'rgba(255,255,255,0.1)'
+                : 'rgba(0,0,0,0.05)',
+            },
+          ]}
+          onPress={() => dispatch(toggleBusinessMode())}>
+          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <View style={styles.headerTitleContainer}>
+          <Text
+            style={[styles.headerTitle, {color: colors.textPrimary}]}
+            numberOfLines={1}>
+            Ad Creating Studio
+          </Text>
         </View>
-
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={[
-              styles.headerButton,
-              {
-                backgroundColor: colors.primary,
-                width: themeToggleSize,
-                height: themeToggleSize,
-                borderRadius: themeToggleSize / 2,
-              },
-            ]}
-            onPress={() => dispatch(toggleBusinessMode())}
-            activeOpacity={0.7}>
-            <Ionicons
-              name="briefcase"
-              size={themeIconSize}
-              color="#fff"
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.headerButton,
-              {
-                backgroundColor: colors.backgroundTertiary,
-                width: themeToggleSize,
-                height: themeToggleSize,
-                borderRadius: themeToggleSize / 2,
-              },
-            ]}
-            onPress={() => (navigation as any).navigate('Notifications')}
-            activeOpacity={0.7}>
-            <Ionicons
-              name="notifications"
-              size={themeIconSize}
-              color={colors.textPrimary}
-            />
-            {notificationUnreadCount > 0 && <View style={styles.bellDot} />}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.headerButton,
-              {
-                backgroundColor: colors.backgroundTertiary,
-                width: themeToggleSize,
-                height: themeToggleSize,
-                borderRadius: themeToggleSize / 2,
-              },
-            ]}
-            onPress={() => (navigation as any).navigate('MyCreations')}
-            activeOpacity={0.7}>
-            <Ionicons
-              name="images"
-              size={themeIconSize}
-              color={colors.textPrimary}
-            />
-            {totalUnreadCount > 0 && (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>
-                  {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Content */}
@@ -351,10 +316,7 @@ const ForBusinessScreen: React.FC = () => {
             style={styles.heroOverlay}
           />
           <View style={styles.heroContent}>
-            <View style={[styles.heroIconBadge, {backgroundColor: colors.primary}]}>
-              <Ionicons name="briefcase" size={24} color="#fff" />
-            </View>
-            <Text style={styles.heroTitle}>Content Studio</Text>
+            <Text style={styles.heroTitle}>Ad Creating Studio</Text>
             <Text style={styles.heroSubtitle}>
               Turn any product snap into scroll-stopping ads and social content
             </Text>
@@ -393,7 +355,8 @@ const ForBusinessScreen: React.FC = () => {
               Take a photo or choose from gallery
             </Text>
           </TouchableOpacity>
-        ) : (
+        ) : null}
+        {productPhoto && (
           <View
             style={[
               styles.photoSlotFilled,
@@ -656,6 +619,17 @@ const ForBusinessScreen: React.FC = () => {
         onClose={() => setShowPhotoPicker(false)}
         onSelectPhoto={handleSelectPhoto}
         title="Product Photo"
+        onWebPickerPress={() => {
+          setShowPhotoPicker(false);
+          setTimeout(() => setShowWebPicker(true), 300);
+        }}
+      />
+
+      {/* Web Image Picker Modal */}
+      <WebImagePickerModal
+        visible={showWebPicker}
+        onClose={() => setShowWebPicker(false)}
+        onSelectImage={handleWebImageSelect}
       />
 
       {/* Template Composer Modal */}
@@ -744,30 +718,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
+    paddingTop: 12,
+    paddingBottom: 12,
+    paddingHorizontal: 16,
   },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  menuButton: {
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerRight: {
-    flexDirection: 'row',
-    gap: 8,
+  headerTitleContainer: {
+    flex: 1,
     alignItems: 'center',
+    paddingHorizontal: 8,
   },
-  headerButton: {
-    justifyContent: 'center',
-    alignItems: 'center',
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  headerSpacer: {
+    width: 40,
   },
   bellDot: {
     position: 'absolute',

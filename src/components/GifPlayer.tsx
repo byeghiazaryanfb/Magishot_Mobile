@@ -1,6 +1,7 @@
-import React from 'react';
-import {View, StyleSheet} from 'react-native';
+import React, {useState} from 'react';
+import {View, StyleSheet, ActivityIndicator} from 'react-native';
 import {WebView} from 'react-native-webview';
+import {useTheme} from '../theme/ThemeContext';
 
 interface GifPlayerProps {
   uri: string;
@@ -13,6 +14,9 @@ const GifPlayer: React.FC<GifPlayerProps> = ({
   style,
   resizeMode = 'cover',
 }) => {
+  const {colors} = useTheme();
+  const [loaded, setLoaded] = useState(false);
+
   const html = `
     <!DOCTYPE html>
     <html>
@@ -41,9 +45,14 @@ const GifPlayer: React.FC<GifPlayerProps> = ({
 
   return (
     <View style={[styles.container, style]}>
+      {!loaded && (
+        <View style={styles.loaderOverlay}>
+          <ActivityIndicator size="small" color={colors.primary} style={{opacity: 0.4}} />
+        </View>
+      )}
       <WebView
         source={{html}}
-        style={styles.webview}
+        style={[styles.webview, !loaded && {opacity: 0}]}
         scrollEnabled={false}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
@@ -54,6 +63,7 @@ const GifPlayer: React.FC<GifPlayerProps> = ({
         mediaPlaybackRequiresUserAction={false}
         originWhitelist={['*']}
         mixedContentMode="always"
+        onLoadEnd={() => setLoaded(true)}
       />
     </View>
   );
@@ -66,6 +76,12 @@ const styles = StyleSheet.create({
   webview: {
     flex: 1,
     backgroundColor: 'transparent',
+  },
+  loaderOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
   },
 });
 

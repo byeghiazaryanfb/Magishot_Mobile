@@ -9,7 +9,6 @@ import {
   Alert,
   Platform,
   Share,
-  PermissionsAndroid,
   Modal,
   ScrollView,
   StatusBar,
@@ -23,6 +22,7 @@ import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import {useTheme} from '../theme/ThemeContext';
 import GradientButton from '../components/GradientButton';
 import {RootStackParamList} from '../navigation/RootNavigator';
+import {requestPhotoLibraryPermission, showPermissionDeniedAlert, isPermissionError} from '../utils/permissions';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('window');
 
@@ -46,23 +46,10 @@ const ImageResultScreen: React.FC = () => {
     try {
       setIsSaving(true);
 
-      if (Platform.OS === 'android') {
-        // Request permission on Android
-        const permission = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-          {
-            title: 'Storage Permission',
-            message: 'App needs access to your storage to save images.',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
-          },
-        );
-
-        if (permission !== PermissionsAndroid.RESULTS.GRANTED) {
-          Alert.alert('Permission Denied', 'Cannot save image without storage permission.');
-          return;
-        }
+      const hasPermission = await requestPhotoLibraryPermission();
+      if (!hasPermission) {
+        showPermissionDeniedAlert('photo');
+        return;
       }
 
       // For base64 image, save directly
@@ -104,7 +91,11 @@ const ImageResultScreen: React.FC = () => {
       }
     } catch (error) {
       console.error('Save error:', error);
-      Alert.alert('Save Failed', 'Failed to save image. Please try again.');
+      if (isPermissionError(error)) {
+        showPermissionDeniedAlert('photo');
+      } else {
+        Alert.alert('Save Failed', 'Failed to save image. Please try again.');
+      }
     } finally {
       setIsSaving(false);
     }

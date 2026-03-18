@@ -6,8 +6,6 @@ import {
   Text,
   StyleSheet,
   Image,
-  Platform,
-  PermissionsAndroid,
   ActivityIndicator,
   Dimensions,
   ScrollView,
@@ -28,6 +26,7 @@ import {addToHistory} from '../store/slices/historySlice';
 import {useTheme} from '../theme/ThemeContext';
 import {GeneratedImage} from '../services/imageTransform';
 import ZoomableImage from './ZoomableImage';
+import {requestPhotoLibraryPermission} from '../utils/permissions';
 
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
@@ -146,26 +145,6 @@ const ResultModal: React.FC = () => {
     dispatch(hideResultModal());
   };
 
-  const requestAndroidPermission = async () => {
-    if (Platform.OS !== 'android') {
-      return true;
-    }
-
-    const permission = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
-
-    if (Platform.Version >= 33) {
-      return true;
-    }
-
-    const hasPermission = await PermissionsAndroid.check(permission);
-    if (hasPermission) {
-      return true;
-    }
-
-    const status = await PermissionsAndroid.request(permission);
-    return status === 'granted';
-  };
-
   const handleSave = useCallback(async () => {
     if (!currentImageUrl) {
       showDialog('error', 'Error', 'No image to save');
@@ -173,7 +152,7 @@ const ResultModal: React.FC = () => {
     }
 
     try {
-      const hasPermission = await requestAndroidPermission();
+      const hasPermission = await requestPhotoLibraryPermission();
       if (!hasPermission) {
         showDialog('warning', 'Permission Denied', 'Cannot save without permission');
         return;

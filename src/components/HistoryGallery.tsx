@@ -7,8 +7,6 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  Platform,
-  PermissionsAndroid,
   RefreshControl,
   AppState,
 } from 'react-native';
@@ -27,6 +25,7 @@ import {
 } from '../services/userPhotosApi';
 import CustomDialog from './CustomDialog';
 import FullScreenImageModal from './FullScreenImageModal';
+import {requestPhotoLibraryPermission} from '../utils/permissions';
 
 interface HistoryGalleryProps {
   visible: boolean;
@@ -164,21 +163,9 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
     }
   }, [isLoadingMore, hasMore, nextCursor, fetchPhotos]);
 
-  const requestAndroidPermission = async () => {
-    if (Platform.OS !== 'android') return true;
-    if (Platform.Version >= 33) return true;
-
-    const permission = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
-    const hasPermission = await PermissionsAndroid.check(permission);
-    if (hasPermission) return true;
-
-    const status = await PermissionsAndroid.request(permission);
-    return status === 'granted';
-  };
-
   const handleSave = async (imageUrl: string) => {
     try {
-      const hasPermission = await requestAndroidPermission();
+      const hasPermission = await requestPhotoLibraryPermission();
       if (!hasPermission) {
         showMessage('warning', 'Permission Denied', 'Cannot save without permission');
         return;

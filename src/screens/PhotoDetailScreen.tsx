@@ -7,8 +7,6 @@ import {
   TouchableOpacity,
   Animated,
   PanResponder,
-  Platform,
-  PermissionsAndroid,
   Dimensions,
   StatusBar,
 } from 'react-native';
@@ -24,6 +22,7 @@ import {useAppSelector, useAppDispatch} from '../store/hooks';
 import {UserPhoto, deleteUserPhoto, markPhotoOpened} from '../services/userPhotosApi';
 import {fetchUnreadCounts, markPhotoViewed} from '../store/slices/appSlice';
 import CustomDialog from '../components/CustomDialog';
+import {requestPhotoLibraryPermission} from '../utils/permissions';
 import type {RootStackParamList} from '../navigation/RootNavigator';
 
 type PhotoDetailRouteProp = RouteProp<RootStackParamList, 'PhotoDetail'>;
@@ -178,19 +177,9 @@ const PhotoDetailScreen: React.FC = () => {
     setMessageDialog(prev => ({...prev, visible: false}));
   };
 
-  const requestAndroidPermission = async () => {
-    if (Platform.OS !== 'android') return true;
-    if (Platform.Version >= 33) return true;
-    const permission = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
-    const hasPermission = await PermissionsAndroid.check(permission);
-    if (hasPermission) return true;
-    const status = await PermissionsAndroid.request(permission);
-    return status === 'granted';
-  };
-
   const handleSave = async (imageUrl: string) => {
     try {
-      const hasPermission = await requestAndroidPermission();
+      const hasPermission = await requestPhotoLibraryPermission();
       if (!hasPermission) {
         showMessage('warning', 'Permission Denied', 'Cannot save without permission');
         return;

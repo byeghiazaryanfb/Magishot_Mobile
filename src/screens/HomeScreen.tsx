@@ -100,20 +100,6 @@ const HomeScreen: React.FC = () => {
                 borderRadius: themeToggleSize / 2,
               },
             ]}
-            onPress={() => dispatch(toggleBusinessMode())}
-            activeOpacity={0.7}>
-            <Ionicons name="briefcase-outline" size={themeIconSize} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.headerButton,
-              {
-                backgroundColor: colors.backgroundTertiary,
-                width: themeToggleSize,
-                height: themeToggleSize,
-                borderRadius: themeToggleSize / 2,
-              },
-            ]}
             onPress={() => (navigation as any).navigate('Notifications')}
             activeOpacity={0.7}>
             <Ionicons name="notifications" size={themeIconSize} color={colors.textPrimary} />

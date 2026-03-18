@@ -26,6 +26,7 @@ interface PhotoPickerModalProps {
   onClose: () => void;
   onSelectPhoto: (photo: ImageAsset) => void;
   title?: string;
+  onWebPickerPress?: () => void;
 }
 
 const PhotoPickerModal: React.FC<PhotoPickerModalProps> = ({
@@ -33,6 +34,7 @@ const PhotoPickerModal: React.FC<PhotoPickerModalProps> = ({
   onClose,
   onSelectPhoto,
   title = 'Choose Photo',
+  onWebPickerPress,
 }) => {
   const {colors} = useTheme();
   const {width, height} = useWindowDimensions();
@@ -306,6 +308,22 @@ const PhotoPickerModal: React.FC<PhotoPickerModalProps> = ({
             </TouchableOpacity>
           </View>
 
+          {onWebPickerPress && (
+            <TouchableOpacity
+              style={[styles.webPageOption, {backgroundColor: colors.warning}]}
+              onPress={onWebPickerPress}
+              activeOpacity={0.8}>
+              <Ionicons name="globe-outline" size={24} color="#fff" />
+              <View style={styles.webPageOptionText}>
+                <Text style={styles.webPageOptionTitle}>From Web Page</Text>
+                <Text style={styles.webPageOptionHint}>
+                  Extract images from any product page URL
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
+          )}
+
           {/* Recent Photos */}
           {photoHistory.length > 0 && (
             <>
@@ -404,6 +422,29 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '600',
+  },
+  webPageOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 12,
+  },
+  webPageOptionText: {
+    flex: 1,
+  },
+  webPageOptionTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  webPageOptionHint: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    marginTop: 2,
   },
   sectionHeader: {
     flexDirection: 'row',

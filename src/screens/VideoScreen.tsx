@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import {useNavigation, DrawerActions} from '@react-navigation/native';
 import {useAppDispatch, useAppSelector} from '../store/hooks';
-import {toggleBusinessMode} from '../store/slices/appSlice';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useTheme} from '../theme/ThemeContext';
@@ -36,6 +35,8 @@ interface VideoTemplate {
   estimatedCoins?: number;
   isFree?: boolean;
   videoAnimationEnabled?: boolean;
+  freeCredits?: number;
+  freeUsageRemaining?: number | null;
 }
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -48,6 +49,7 @@ const VideoScreen: React.FC = () => {
   const {unopenedPhotosCount, unplayedVideosCount} = useAppSelector(state => state.app);
   const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount;
   const notificationUnreadCount = useAppSelector(state => state.notification.unreadCount);
+  const accessToken = useAppSelector(state => state.auth.accessToken);
   const [templates, setTemplates] = useState<VideoTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -85,7 +87,11 @@ const VideoScreen: React.FC = () => {
   const fetchTemplates = async () => {
     try {
       setError(null);
-      const response = await fetch(`${config.apiBaseUrl}/api/videotemplates`);
+      const headers: Record<string, string> = {};
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+      const response = await fetch(`${config.apiBaseUrl}/api/videotemplates`, {headers});
       if (!response.ok) {
         throw new Error('Failed to fetch templates');
       }
@@ -101,7 +107,7 @@ const VideoScreen: React.FC = () => {
 
   useEffect(() => {
     fetchTemplates();
-  }, []);
+  }, [accessToken]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -139,6 +145,11 @@ const VideoScreen: React.FC = () => {
       <View style={styles.gifContainer}>
         <GifPlayer uri={item.gifUrl} style={styles.gif} resizeMode="cover" />
         <PriceBadge estimatedCoins={item.estimatedCoins} isFree={item.isFree} variant="modal" />
+        {item.freeCredits != null && item.freeCredits > 0 && item.freeUsageRemaining != null && item.freeUsageRemaining > 0 && (
+          <View style={styles.freeUsageBadge}>
+            <Text style={styles.freeUsageText}>{item.freeUsageRemaining} free</Text>
+          </View>
+        )}
       </View>
       <View style={styles.cardContent}>
         <Text
@@ -152,11 +163,47 @@ const VideoScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <View style={[styles.centered, {backgroundColor: colors.background}]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, {color: colors.textSecondary}]}>
-          Loading templates...
-        </Text>
+      <View style={[styles.container, {backgroundColor: colors.background}]}>
+        <View
+          style={[
+            styles.header,
+            {
+              backgroundColor: colors.backgroundSecondary,
+              paddingHorizontal: headerPadding,
+            },
+          ]}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity style={styles.menuButton} onPress={openDrawer} activeOpacity={0.7}>
+              <Ionicons name="menu" size={themeIconSize} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <Logo size={isTablet ? 140 : 100} />
+          </View>
+        </View>
+        <View style={styles.listContent}>
+          {[0, 1, 2].map(rowIdx => (
+            <View key={rowIdx} style={styles.row}>
+              {Array.from({length: numColumns}).map((_, colIdx) => (
+                <View
+                  key={colIdx}
+                  style={[
+                    styles.card,
+                    {
+                      width: cardWidth,
+                      backgroundColor: colors.cardBackground,
+                      borderColor: colors.border,
+                    },
+                  ]}>
+                  <View style={[styles.gifContainer, {justifyContent: 'center', alignItems: 'center'}]}>
+                    <ActivityIndicator size="small" color={colors.primary} style={{opacity: 0.4}} />
+                  </View>
+                  <View style={styles.cardContent}>
+                    <View style={{width: '60%', height: 12, borderRadius: 6, backgroundColor: colors.backgroundTertiary}} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
       </View>
     );
   }
@@ -201,20 +248,6 @@ const VideoScreen: React.FC = () => {
         </View>
 
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={[
-              styles.headerButton,
-              {
-                backgroundColor: colors.backgroundTertiary,
-                width: themeToggleSize,
-                height: themeToggleSize,
-                borderRadius: themeToggleSize / 2,
-              },
-            ]}
-            onPress={() => dispatch(toggleBusinessMode())}
-            activeOpacity={0.7}>
-            <Ionicons name="briefcase-outline" size={themeIconSize} color={colors.textPrimary} />
-          </TouchableOpacity>
           <TouchableOpacity
             style={[
               styles.headerButton,
@@ -449,6 +482,21 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 4 / 3,
     backgroundColor: '#000',
+  },
+  freeUsageBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: '#10b981',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    zIndex: 10,
+  },
+  freeUsageText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   gif: {
     width: '100%',

@@ -494,7 +494,6 @@ const SightsBar: React.FC = () => {
               ]}
               onPress={() => handleCategoryPress(category.id)}
               activeOpacity={0.7}>
-              <Text style={styles.filterIcon}>{getCategoryEmoji(category.id)}</Text>
               <Text
                 style={[
                   styles.filterText,
@@ -572,7 +571,6 @@ const SightsBar: React.FC = () => {
                       ]}
                       onPress={() => setModalCategory(category.id)}
                       activeOpacity={0.7}>
-                      <Text style={styles.modalFilterIcon}>{getCategoryEmoji(category.id)}</Text>
                       <Text
                         style={[
                           styles.modalFilterText,

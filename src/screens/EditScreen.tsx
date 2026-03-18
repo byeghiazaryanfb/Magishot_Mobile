@@ -8,7 +8,6 @@ import {
   Image,
   TextInput,
   Platform,
-  PermissionsAndroid,
   Modal,
   PanResponder,
   Animated,
@@ -26,6 +25,7 @@ import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import Share from 'react-native-share';
 import ViewShot from 'react-native-view-shot';
 import {triggerHaptic} from '../utils/haptics';
+import {requestPhotoLibraryPermission} from '../utils/permissions';
 import {
   Canvas,
   Image as SkiaImage,
@@ -50,7 +50,6 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import type {SkImage} from '@shopify/react-native-skia';
 import {useTheme} from '../theme/ThemeContext';
 import {useAppDispatch} from '../store/hooks';
-import {toggleBusinessMode} from '../store/slices/appSlice';
 import {fetchCoinBalance} from '../store/slices/authSlice';
 import {addToHistory} from '../store/slices/historySlice';
 import Logo from '../components/Logo';
@@ -123,6 +122,30 @@ const CAPTION_STYLES = [
   {id: 'witty', label: 'Witty', icon: 'flash-outline'},
   {id: 'dramatic', label: 'Dramatic', icon: 'flame-outline'},
 ];
+
+// Small helper: shows a light spinner until the image has loaded
+const FilterImageWithLoader: React.FC<{
+  uri: string;
+  style: any;
+}> = ({uri, style}) => {
+  const {colors} = useTheme();
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <View style={[style, {overflow: 'hidden'}]}>
+      {!loaded && (
+        <View style={[StyleSheet.absoluteFill, {justifyContent: 'center', alignItems: 'center'}]}>
+          <ActivityIndicator size="small" color={colors.primary} style={{opacity: 0.4}} />
+        </View>
+      )}
+      <Image
+        source={{uri}}
+        style={[StyleSheet.absoluteFill, {borderRadius: style?.borderRadius || 14, opacity: loaded ? 1 : 0}]}
+        resizeMode="cover"
+        onLoad={() => setLoaded(true)}
+      />
+    </View>
+  );
+};
 
 const EditScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -873,19 +896,6 @@ const EditScreen: React.FC = () => {
     }
   }, [resetFilterState]);
 
-  // Request Android permission
-  const requestAndroidPermission = async () => {
-    if (Platform.OS !== 'android') return true;
-    if (Platform.Version >= 33) return true;
-
-    const permission = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
-    const hasPermission = await PermissionsAndroid.check(permission);
-    if (hasPermission) return true;
-
-    const status = await PermissionsAndroid.request(permission);
-    return status === 'granted';
-  };
-
   // Save edited image
   const handleSave = useCallback(async () => {
     if (!selectedImage || !viewShotRef.current) {
@@ -900,7 +910,7 @@ const EditScreen: React.FC = () => {
     setIsEditingText(false);
     setTextSelected(false);
     try {
-      const hasPermission = await requestAndroidPermission();
+      const hasPermission = await requestPhotoLibraryPermission();
       if (!hasPermission) {
         showMessage('warning', 'Permission Denied', 'Cannot save without permission');
         setIsSaving(false);
@@ -1803,7 +1813,7 @@ const EditScreen: React.FC = () => {
           <View style={styles.recentFiltersThumbnails}>
             {recentFilters.length === 0 ? (
               <Text style={[styles.recentFiltersPlaceholder, {color: colors.textTertiary}]}>
-                Tap to apply effects
+                Tap to apply filters
               </Text>
             ) : (
               recentFilters.slice(0, 3).map(recentFilter => {
@@ -1958,7 +1968,22 @@ const EditScreen: React.FC = () => {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled">
             <View style={styles.filtersGrid}>
-              {isSearching ? (
+              {isLoadingFilters ? (
+                // Skeleton tiles while loading
+                Array.from({length: 6}).map((_, idx) => (
+                  <View
+                    key={`skeleton-${idx}`}
+                    style={[
+                      styles.filterGridTile,
+                      {backgroundColor: colors.backgroundTertiary},
+                    ]}>
+                    <View style={[styles.filterGridPreview, {backgroundColor: colors.backgroundSecondary}]}>
+                      <ActivityIndicator size="small" color={colors.primary} style={{opacity: 0.4}} />
+                    </View>
+                    <View style={{width: '60%', height: 12, borderRadius: 6, backgroundColor: colors.backgroundSecondary, marginTop: 8}} />
+                  </View>
+                ))
+              ) : isSearching ? (
                 // Search results
                 searchResults && searchResults.length > 0 ? (
                   searchResults.map((item) => {
@@ -1988,10 +2013,9 @@ const EditScreen: React.FC = () => {
                           ) : (
                             <>
                               {getFullThumbnailUrl(filter.thumbnailUrl) ? (
-                                <Image
-                                  source={{uri: getFullThumbnailUrl(filter.thumbnailUrl)!}}
+                                <FilterImageWithLoader
+                                  uri={getFullThumbnailUrl(filter.thumbnailUrl)!}
                                   style={styles.filterGridThumbnail}
-                                  resizeMode="cover"
                                 />
                               ) : (
                                 <Ionicons name="sparkles" size={32} color={colors.primary} />
@@ -2051,10 +2075,9 @@ const EditScreen: React.FC = () => {
                           {isLoading ? (
                             <ActivityIndicator size="large" color={colors.primary} />
                           ) : getFullThumbnailUrl(recentFilter.thumbnailUrl) ? (
-                            <Image
-                              source={{uri: getFullThumbnailUrl(recentFilter.thumbnailUrl)!}}
+                            <FilterImageWithLoader
+                              uri={getFullThumbnailUrl(recentFilter.thumbnailUrl)!}
                               style={styles.filterGridThumbnail}
-                              resizeMode="cover"
                             />
                           ) : (
                             <Ionicons name="sparkles" size={32} color={colors.primary} />
@@ -2979,20 +3002,6 @@ const EditScreen: React.FC = () => {
           <Logo size={isTablet ? 140 : 100} />
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={[
-              styles.headerButton,
-              {
-                backgroundColor: colors.backgroundTertiary,
-                width: themeToggleSize,
-                height: themeToggleSize,
-                borderRadius: themeToggleSize / 2,
-              },
-            ]}
-            onPress={() => dispatch(toggleBusinessMode())}
-            activeOpacity={0.7}>
-            <Ionicons name="briefcase-outline" size={themeIconSize} color={colors.textPrimary} />
-          </TouchableOpacity>
           <TouchableOpacity
             style={[
               styles.headerButton,

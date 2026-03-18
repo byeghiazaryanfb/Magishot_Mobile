@@ -10,8 +10,6 @@ import {
   Dimensions,
   Modal,
   ScrollView,
-  Platform,
-  PermissionsAndroid,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -48,9 +46,11 @@ import FullScreenImageModal from './FullScreenImageModal';
 import CustomDialog from './CustomDialog';
 import {CharacterItem, getFullCharacterImageUrl} from '../services/charactersApi';
 import {config} from '../utils/config';
+import {requestPhotoLibraryPermission} from '../utils/permissions';
 import {useServicePrices} from '../hooks/useServicePrices';
 import {addPendingJob} from '../store/slices/videoNotificationSlice';
 import {addPendingImageJob, addPendingSynthesizeJobs} from '../store/slices/imageNotificationSlice';
+import {toggleBusinessMode} from '../store/slices/appSlice';
 import {SvgXml} from 'react-native-svg';
 import MaskDrawingCanvas, {MaskDrawingCanvasRef} from './MaskDrawingCanvas';
 import AnimateResultModal from './AnimateResultModal';
@@ -2016,14 +2016,10 @@ const CameraArea: React.FC = () => {
   const handleCleanBgSave = async () => {
     if (!cleanBgResultUrl) { return; }
     try {
-      if (Platform.OS === 'android') {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-        );
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          showError('Permission Denied', 'Cannot save without permission');
-          return;
-        }
+      const hasPermission = await requestPhotoLibraryPermission();
+      if (!hasPermission) {
+        showError('Permission Denied', 'Cannot save without permission');
+        return;
       }
       // Download to local file first — CameraRoll needs a file:// URI on iOS
       const fileName = `cleaned_${Date.now()}.png`;
@@ -2232,6 +2228,15 @@ const CameraArea: React.FC = () => {
           />
           <Text style={[styles.styleModeButtonText, {color: styleMode === 'synthesize' ? '#fff' : colors.textSecondary}]}>
             Fusion
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.styleModeButton, {backgroundColor: colors.backgroundTertiary}]}
+          onPress={() => dispatch(toggleBusinessMode())}
+          activeOpacity={0.8}>
+          <Ionicons name="megaphone-outline" size={16} color={colors.textSecondary} />
+          <Text style={[styles.styleModeButtonText, {color: colors.textSecondary}]}>
+            Ad Maker
           </Text>
         </TouchableOpacity>
         <TouchableOpacity

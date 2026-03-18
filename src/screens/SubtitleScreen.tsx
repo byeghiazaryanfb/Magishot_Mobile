@@ -114,6 +114,26 @@ const SubtitleScreen: React.FC = () => {
   const [outlineWidth, setOutlineWidth] = useState(2);
   const [position, setPosition] = useState<SubtitlePosition>('bottom');
 
+  // Slider track refs for drag support
+  const sliderTrackRefs = useRef<Record<string, {pageX: number; width: number}>>({}).current;
+  const sliderTrackViewRefs = useRef<Record<string, View | null>>({}).current;
+
+  const measureSliderTrack = (label: string) => {
+    sliderTrackViewRefs[label]?.measure?.((_x, _y, w, _h, pageX) => {
+      sliderTrackRefs[label] = {pageX, width: w};
+    });
+  };
+
+  const handleSliderTouch = (label: string, pageX: number, min: number, max: number, step: number, setValue: (v: number) => void) => {
+    const layout = sliderTrackRefs[label];
+    if (!layout || layout.width <= 0) return;
+    const relativeX = pageX - layout.pageX;
+    const ratio = Math.max(0, Math.min(relativeX / layout.width, 1));
+    const raw = min + ratio * (max - min);
+    const snapped = Math.round(raw / step) * step;
+    setValue(snapped);
+  };
+
   // Language settings
   const [language, setLanguage] = useState('');
   const [translateTo, setTranslateTo] = useState('');
@@ -444,8 +464,23 @@ const SubtitleScreen: React.FC = () => {
                   activeOpacity={0.7}>
                   <Ionicons name="remove" size={20} color={colors.textPrimary} />
                 </TouchableOpacity>
-                <View style={[styles.stepperTrack, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}]}>
-                  <View style={[styles.stepperFill, {width: `${((fontSize - 8) / 64) * 100}%`, backgroundColor: colors.primary}]} />
+                <View
+                  ref={(ref) => { sliderTrackViewRefs['fontSize'] = ref; }}
+                  style={[styles.stepperTrack, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}]}
+                  onLayout={() => setTimeout(() => measureSliderTrack('fontSize'), 50)}
+                  onStartShouldSetResponder={() => true}
+                  onMoveShouldSetResponder={() => true}
+                  onResponderTerminationRequest={() => false}
+                  onResponderGrant={(e) => {
+                    measureSliderTrack('fontSize');
+                    handleSliderTouch('fontSize', e.nativeEvent.pageX, 8, 72, 2, setFontSize);
+                  }}
+                  onResponderMove={(e) => handleSliderTouch('fontSize', e.nativeEvent.pageX, 8, 72, 2, setFontSize)}>
+                  <View style={[styles.stepperFill, {width: `${((fontSize - 8) / 64) * 100}%`, backgroundColor: colors.primary}]} pointerEvents="none" />
+                  <View
+                    style={[styles.stepperThumb, {backgroundColor: colors.primary, left: `${((fontSize - 8) / 64) * 100}%`}]}
+                    pointerEvents="none"
+                  />
                 </View>
                 <TouchableOpacity
                   style={[styles.stepperButton, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}]}
@@ -508,8 +543,23 @@ const SubtitleScreen: React.FC = () => {
                   activeOpacity={0.7}>
                   <Ionicons name="remove" size={20} color={colors.textPrimary} />
                 </TouchableOpacity>
-                <View style={[styles.stepperTrack, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}]}>
-                  <View style={[styles.stepperFill, {width: `${(outlineWidth / 10) * 100}%`, backgroundColor: colors.primary}]} />
+                <View
+                  ref={(ref) => { sliderTrackViewRefs['outlineWidth'] = ref; }}
+                  style={[styles.stepperTrack, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}]}
+                  onLayout={() => setTimeout(() => measureSliderTrack('outlineWidth'), 50)}
+                  onStartShouldSetResponder={() => true}
+                  onMoveShouldSetResponder={() => true}
+                  onResponderTerminationRequest={() => false}
+                  onResponderGrant={(e) => {
+                    measureSliderTrack('outlineWidth');
+                    handleSliderTouch('outlineWidth', e.nativeEvent.pageX, 0, 10, 1, setOutlineWidth);
+                  }}
+                  onResponderMove={(e) => handleSliderTouch('outlineWidth', e.nativeEvent.pageX, 0, 10, 1, setOutlineWidth)}>
+                  <View style={[styles.stepperFill, {width: `${(outlineWidth / 10) * 100}%`, backgroundColor: colors.primary}]} pointerEvents="none" />
+                  <View
+                    style={[styles.stepperThumb, {backgroundColor: colors.primary, left: `${(outlineWidth / 10) * 100}%`}]}
+                    pointerEvents="none"
+                  />
                 </View>
                 <TouchableOpacity
                   style={[styles.stepperButton, {backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}]}
@@ -1127,13 +1177,30 @@ const styles = StyleSheet.create({
   },
   stepperTrack: {
     flex: 1,
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
+    height: 24,
+    borderRadius: 12,
+    position: 'relative',
+    justifyContent: 'center',
   },
   stepperFill: {
-    height: '100%',
+    height: 6,
     borderRadius: 3,
+    position: 'absolute',
+    left: 0,
+    top: 9,
+  },
+  stepperThumb: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    top: 2,
+    marginLeft: -10,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
   },
   colorGrid: {
     flexDirection: 'row',

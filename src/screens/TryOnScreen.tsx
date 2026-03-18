@@ -5,7 +5,6 @@ import {useCopilot} from 'react-native-copilot';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useTheme} from '../theme/ThemeContext';
 import {useAppDispatch, useAppSelector} from '../store/hooks';
-import {toggleBusinessMode} from '../store/slices/appSlice';
 import {setProductImage, setProductImageUrl, setSelectedProduct} from '../store/slices/tryOnSlice';
 import {useWalkthrough, WALKTHROUGH_KEYS} from '../hooks/useWalkthrough';
 import TryOnArea from '../components/TryOnArea';
@@ -105,20 +104,6 @@ const TryOnScreen: React.FC = () => {
         </View>
 
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={[
-              styles.headerButton,
-              {
-                backgroundColor: colors.backgroundTertiary,
-                width: themeToggleSize,
-                height: themeToggleSize,
-                borderRadius: themeToggleSize / 2,
-              },
-            ]}
-            onPress={() => dispatch(toggleBusinessMode())}
-            activeOpacity={0.7}>
-            <Ionicons name="briefcase-outline" size={themeIconSize} color={colors.textPrimary} />
-          </TouchableOpacity>
           <TouchableOpacity
             style={[
               styles.headerButton,
