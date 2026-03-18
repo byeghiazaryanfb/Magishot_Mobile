@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  TextInput,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
@@ -55,6 +56,7 @@ const VideoScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Extract unique categories from templates
   const categories = useMemo(() => {
@@ -67,11 +69,22 @@ const VideoScreen: React.FC = () => {
     return Array.from(categoryMap, ([id, name]) => ({id, name}));
   }, [templates]);
 
-  // Filter templates by selected category
+  // Filter templates by selected category and search query
   const filteredTemplates = useMemo(() => {
-    if (!selectedCategoryId) return templates;
-    return templates.filter(t => t.categoryId === selectedCategoryId);
-  }, [templates, selectedCategoryId]);
+    let result = templates;
+    if (selectedCategoryId) {
+      result = result.filter(t => t.categoryId === selectedCategoryId);
+    }
+    if (searchQuery.trim()) {
+      const query = searchQuery.trim().toLowerCase();
+      result = result.filter(t =>
+        t.displayName.toLowerCase().includes(query) ||
+        (t.description && t.description.toLowerCase().includes(query)) ||
+        (t.categoryName && t.categoryName.toLowerCase().includes(query))
+      );
+    }
+    return result;
+  }, [templates, selectedCategoryId, searchQuery]);
   const isTablet = width >= 768;
   const numColumns = isTablet ? 3 : 2;
   const spacing = 12;
@@ -289,6 +302,28 @@ const VideoScreen: React.FC = () => {
         </View>
       </View>
 
+      {/* Search Box */}
+      <View style={[styles.searchContainer, {backgroundColor: colors.background}]}>
+        <View style={[styles.searchBox, {backgroundColor: colors.backgroundTertiary, borderColor: colors.border}]}>
+          <Ionicons name="search-outline" size={18} color={colors.textTertiary} />
+          <TextInput
+            style={[styles.searchInput, {color: colors.textPrimary}]}
+            placeholder="Search templates..."
+            placeholderTextColor={colors.textTertiary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.7}>
+              <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       <FlatList
         data={filteredTemplates}
         renderItem={renderTemplate}
@@ -374,6 +409,26 @@ const VideoScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    height: 42,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '400',
+    paddingVertical: 0,
   },
   centered: {
     flex: 1,
