@@ -16,8 +16,8 @@ const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
   const {colors} = useTheme();
   const {width} = useWindowDimensions();
-  const {unopenedPhotosCount, unplayedVideosCount} = useAppSelector(state => state.app);
-  const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount;
+  const {unopenedPhotosCount, unplayedVideosCount, unviewedComicsCount} = useAppSelector(state => state.app);
+  const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount + unviewedComicsCount;
   const notificationUnreadCount = useAppSelector(state => state.notification.unreadCount);
   // Walkthrough for Studio tab
   const {start, copilotEvents, currentStep} = useCopilot();

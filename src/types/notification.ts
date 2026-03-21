@@ -2,7 +2,7 @@ export interface Notification {
   id: string;
   title: string;
   message: string;
-  resourceType: 'photo' | 'video';
+  resourceType: 'photo' | 'video' | 'comic';
   resourceId: string;
   status: 'ready' | 'failed';
   thumbnailUrl?: string | null;

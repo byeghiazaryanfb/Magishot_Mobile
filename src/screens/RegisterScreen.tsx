@@ -12,6 +12,7 @@ import {
   ImageBackground,
   useWindowDimensions,
   TouchableWithoutFeedback,
+  Modal,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -25,6 +26,7 @@ import appleAuth from '@invertase/react-native-apple-authentication';
 import {useAppDispatch, useAppSelector} from '../store/hooks';
 import {registerUser, externalLogin, clearError} from '../store/slices/authSlice';
 import Logo from '../components/Logo';
+import {config} from '../utils/config';
 
 interface RegisterScreenProps {
   onNavigateToLogin: () => void;
@@ -47,6 +49,10 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({onNavigateToLogin, onBac
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [legalModal, setLegalModal] = useState<{visible: boolean; title: string; content: string; isLoading: boolean}>({
+    visible: false, title: '', content: '', isLoading: false,
+  });
   const [errorDialog, setErrorDialog] = useState<{
     visible: boolean;
     title: string;
@@ -73,6 +79,88 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({onNavigateToLogin, onBac
   useEffect(() => {
     dispatch(clearError());
   }, [dispatch]);
+
+  const openLegalContent = async (type: 'terms' | 'privacy') => {
+    const title = type === 'terms' ? 'Terms & Conditions' : 'Privacy Policy';
+    const endpoint = type === 'terms' ? 'terms_and_conditions' : 'privacy_policy';
+    setLegalModal({visible: true, title, content: '', isLoading: true});
+    try {
+      const response = await fetch(`${config.apiBaseUrl}/api/SystemSettings/${endpoint}`);
+      const json = await response.json();
+      const markdown = json.value || json.content || '';
+      setLegalModal(prev => ({...prev, content: markdown, isLoading: false}));
+    } catch {
+      setLegalModal(prev => ({...prev, content: 'Failed to load content. Please try again.', isLoading: false}));
+    }
+  };
+
+  const renderMarkdown = (text: string) => {
+    const lines = text.split('\n');
+    return lines.map((line, index) => {
+      const trimmed = line.trim();
+      if (!trimmed) return <View key={index} style={{height: 10}} />;
+
+      // Headings
+      if (trimmed.startsWith('### ')) {
+        return (
+          <Text key={index} style={styles.mdH3}>
+            {trimmed.replace(/^### /, '').replace(/\*\*/g, '')}
+          </Text>
+        );
+      }
+      if (trimmed.startsWith('## ')) {
+        return (
+          <Text key={index} style={styles.mdH2}>
+            {trimmed.replace(/^## /, '').replace(/\*\*/g, '')}
+          </Text>
+        );
+      }
+      if (trimmed.startsWith('# ')) {
+        return (
+          <Text key={index} style={styles.mdH1}>
+            {trimmed.replace(/^# /, '').replace(/\*\*/g, '')}
+          </Text>
+        );
+      }
+
+      // Horizontal rule
+      if (/^[-*_]{3,}$/.test(trimmed)) {
+        return <View key={index} style={styles.mdHr} />;
+      }
+
+      // Bullet list
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        return (
+          <View key={index} style={styles.mdBulletRow}>
+            <Text style={styles.mdBulletDot}>{'\u2022'}</Text>
+            <Text style={styles.mdBody}>{renderInlineStyles(trimmed.slice(2))}</Text>
+          </View>
+        );
+      }
+
+      // Regular paragraph
+      return (
+        <Text key={index} style={styles.mdBody}>
+          {renderInlineStyles(trimmed)}
+        </Text>
+      );
+    });
+  };
+
+  const renderInlineStyles = (text: string) => {
+    // Split by bold markers **text**
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return (
+          <Text key={i} style={styles.mdBold}>
+            {part.slice(2, -2)}
+          </Text>
+        );
+      }
+      return part;
+    });
+  };
 
   const validateEmail = (emailStr: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -106,16 +194,27 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({onNavigateToLogin, onBac
       return;
     }
 
+    if (!acceptedTerms) {
+      showError('Terms & Conditions Required', 'Please read and accept our Terms & Conditions and Privacy Policy before creating your account. This helps protect both you and us.');
+      return;
+    }
+
     dispatch(
       registerUser({
         username: username.trim(),
         email: email.trim(),
         password: password,
+        termsAccepted: true,
+        privacyPolicyAccepted: true,
       }),
     );
   };
 
   const handleGoogleSignIn = async () => {
+    if (!acceptedTerms) {
+      showError('Terms & Conditions Required', 'Please read and accept our Terms & Conditions and Privacy Policy before continuing with Google.');
+      return;
+    }
     try {
       await GoogleSignin.hasPlayServices();
       const response = await GoogleSignin.signIn();
@@ -127,6 +226,8 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({onNavigateToLogin, onBac
             provider: 'google',
             idToken: response.data.idToken,
             fullName: fullName,
+            termsAccepted: true,
+            privacyPolicyAccepted: true,
           }),
         );
       }
@@ -139,6 +240,10 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({onNavigateToLogin, onBac
   };
 
   const handleAppleSignIn = async () => {
+    if (!acceptedTerms) {
+      showError('Terms & Conditions Required', 'Please read and accept our Terms & Conditions and Privacy Policy before continuing with Apple.');
+      return;
+    }
     try {
       const appleAuthResponse = await appleAuth.performRequest({
         requestedOperation: appleAuth.Operation.LOGIN,
@@ -161,6 +266,8 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({onNavigateToLogin, onBac
             provider: 'apple',
             idToken: appleAuthResponse.identityToken || '',
             fullName: fullName || appleAuthResponse.email || '',
+            termsAccepted: true,
+            privacyPolicyAccepted: true,
           }),
         );
       }
@@ -334,6 +441,32 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({onNavigateToLogin, onBac
                 </View>
               </View>
 
+              {/* Terms & Conditions */}
+              <TouchableOpacity
+                style={styles.termsRow}
+                onPress={() => setAcceptedTerms(prev => !prev)}
+                activeOpacity={0.7}>
+                <Ionicons
+                  name={acceptedTerms ? 'checkbox' : 'square-outline'}
+                  size={22}
+                  color={acceptedTerms ? '#FF1B6D' : 'rgba(255,255,255,0.5)'}
+                />
+                <Text style={styles.termsText}>
+                  I agree to the{' '}
+                  <Text
+                    style={styles.termsLink}
+                    onPress={() => openLegalContent('terms')}>
+                    Terms & Conditions
+                  </Text>
+                  {' '}and{' '}
+                  <Text
+                    style={styles.termsLink}
+                    onPress={() => openLegalContent('privacy')}>
+                    Privacy Policy
+                  </Text>
+                </Text>
+              </TouchableOpacity>
+
               {/* Register Button */}
               <LinearGradient
                 colors={['#FF1B6D', '#FF758C']}
@@ -412,6 +545,43 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({onNavigateToLogin, onBac
       ) : (
         renderContent()
       )}
+
+      {/* Legal Content Modal */}
+      <Modal
+        visible={legalModal.visible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLegalModal(prev => ({...prev, visible: false}))}>
+        <View style={styles.legalModalOverlay}>
+          <View style={styles.legalModalContainer}>
+            <View style={styles.legalModalHeader}>
+              <Text style={styles.legalModalTitle}>{legalModal.title}</Text>
+              <TouchableOpacity
+                onPress={() => setLegalModal(prev => ({...prev, visible: false}))}
+                style={styles.legalModalClose}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            {legalModal.isLoading ? (
+              <View style={styles.legalModalLoading}>
+                <ActivityIndicator size="large" color="#FF1B6D" />
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.legalModalScroll}
+                showsVerticalScrollIndicator={true}>
+                {renderMarkdown(legalModal.content)}
+              </ScrollView>
+            )}
+            <TouchableOpacity
+              style={styles.legalModalButton}
+              onPress={() => setLegalModal(prev => ({...prev, visible: false}))}
+              activeOpacity={0.8}>
+              <Text style={styles.legalModalButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Error Dialog Overlay */}
       {errorDialog.visible && (
@@ -589,6 +759,22 @@ const styles = StyleSheet.create({
     padding: 8,
     marginRight: -8,
   },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginTop: 4,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  termsLink: {
+    color: '#FF1B6D',
+    fontWeight: '600',
+  },
   registerButtonGradient: {
     borderRadius: 12,
     marginTop: 8,
@@ -658,6 +844,109 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#FF1B6D',
+  },
+  legalModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  legalModalContainer: {
+    backgroundColor: '#1a1a2e',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '85%',
+    paddingBottom: 34,
+  },
+  legalModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  legalModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  legalModalClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  legalModalLoading: {
+    paddingVertical: 60,
+    alignItems: 'center',
+  },
+  legalModalScroll: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  mdH1: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  mdH2: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  mdH3: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.95)',
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  mdBody: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: 'rgba(255,255,255,0.75)',
+    marginBottom: 4,
+  },
+  mdBold: {
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.9)',
+  },
+  mdBulletRow: {
+    flexDirection: 'row' as const,
+    paddingLeft: 4,
+    marginBottom: 4,
+  },
+  mdBulletDot: {
+    fontSize: 14,
+    color: '#FF1B6D',
+    marginRight: 8,
+    marginTop: 1,
+  },
+  mdHr: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginVertical: 16,
+  },
+  legalModalButton: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    backgroundColor: '#FF1B6D',
+  },
+  legalModalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   dialogOverlay: {
     ...StyleSheet.absoluteFillObject,

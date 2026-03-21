@@ -13,6 +13,8 @@ import {useTheme} from '../theme/ThemeContext';
 
 interface GradientButtonProps {
   title: string;
+  titleSuffix?: string;
+  titleSuffixColor?: string;
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
@@ -23,6 +25,8 @@ interface GradientButtonProps {
 
 const GradientButton: React.FC<GradientButtonProps> = ({
   title,
+  titleSuffix,
+  titleSuffixColor,
   onPress,
   disabled = false,
   loading = false,
@@ -54,10 +58,16 @@ const GradientButton: React.FC<GradientButtonProps> = ({
           {loading ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color="#fff" />
-              <Text style={[styles.text, textStyle]}>{title}</Text>
+              <Text style={[styles.text, textStyle]}>
+                {title}
+                {titleSuffix && <Text style={{color: titleSuffixColor || '#fff'}}>{titleSuffix}</Text>}
+              </Text>
             </View>
           ) : (
-            <Text style={[styles.text, textStyle]}>{title}</Text>
+            <Text style={[styles.text, textStyle]}>
+              {title}
+              {titleSuffix && <Text style={{color: titleSuffixColor || '#fff'}}>{titleSuffix}</Text>}
+            </Text>
           )}
         </View>
       </LinearGradient>

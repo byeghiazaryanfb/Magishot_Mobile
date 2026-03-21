@@ -20,6 +20,12 @@ import {
   setSynthesizeFailed,
   clearAllImageNotifications,
 } from '../store/slices/imageNotificationSlice';
+import {
+  setComicJobProcessing,
+  setComicJobReady,
+  setComicJobFailed,
+  clearAllComicNotifications,
+} from '../store/slices/comicNotificationSlice';
 import {fetchUnreadCounts} from '../store/slices/appSlice';
 import {
   incrementUnreadCount,
@@ -110,6 +116,32 @@ const SignalRListener: React.FC = () => {
         dispatch(incrementUnreadCount());
       },
     );
+
+    notificationService.setComicEventCallbacks(
+      data => dispatch(setComicJobProcessing({comicId: data.comicId})),
+      data => {
+        dispatch(
+          setComicJobReady({
+            comicId: data.comicId,
+            imageUrl: data.imageUrl,
+            fileName: data.fileName,
+            mimeType: data.mimeType,
+            thumbnailUrl: data.thumbnailUrl,
+          }),
+        );
+        dispatch(fetchUnreadCounts());
+        dispatch(incrementUnreadCount());
+      },
+      data => {
+        dispatch(
+          setComicJobFailed({
+            comicId: data.comicId,
+            errorMessage: data.errorMessage,
+          }),
+        );
+        dispatch(incrementUnreadCount());
+      },
+    );
   }, [dispatch]);
 
   // Connect/disconnect based on auth state
@@ -127,6 +159,7 @@ const SignalRListener: React.FC = () => {
       notificationService.disconnect();
       dispatch(clearAllVideoNotifications());
       dispatch(clearAllImageNotifications());
+      dispatch(clearAllComicNotifications());
       dispatch(resetNotifications());
       prevTokenRef.current = null;
     }

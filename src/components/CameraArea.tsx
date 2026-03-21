@@ -2331,6 +2331,15 @@ const CameraArea: React.FC = () => {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.styleModeButton, {backgroundColor: colors.backgroundTertiary}]}
+          onPress={() => (navigation as any).navigate('Comics')}
+          activeOpacity={0.8}>
+          <Ionicons name="book" size={16} color={colors.textSecondary} />
+          <Text style={[styles.styleModeButtonText, {color: colors.textSecondary}]}>
+            Comics
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.styleModeButton, {backgroundColor: colors.backgroundTertiary}]}
           onPress={() => (navigation as any).navigate('Subtitle')}
           activeOpacity={0.8}>
           <Ionicons name="text" size={16} color={colors.textSecondary} />

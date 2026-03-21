@@ -17,6 +17,7 @@ interface UseServicePricesResult {
   animationPrice: ServicePrice | undefined;
   refinePrice: ServicePrice | undefined;
   socialContentPrice: ServicePrice | undefined;
+  comicPrice: ServicePrice | undefined;
 }
 
 export const useServicePrices = (): UseServicePricesResult => {
@@ -54,5 +55,6 @@ export const useServicePrices = (): UseServicePricesResult => {
     animationPrice: prices.find(p => p.serviceKey?.toLowerCase() === 'animation'),
     refinePrice: prices.find(p => p.serviceKey?.toLowerCase() === 'refine'),
     socialContentPrice: prices.find(p => p.serviceKey?.toLowerCase() === 'social_content'),
+    comicPrice: prices.find(p => p.serviceKey?.toLowerCase() === 'comic'),
   };
 };

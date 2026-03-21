@@ -25,6 +25,12 @@ import {
   UserPhoto,
 } from '../services/userPhotosApi';
 import {
+  fetchMyComics,
+  deleteComic,
+  markComicViewed,
+  UserComic,
+} from '../services/comicsApi';
+import {
   fetchVideoGallery,
   loadCachedVideoGallery,
   deleteVideo,
@@ -37,6 +43,7 @@ import {
   VideoJob,
 } from '../store/slices/videoNotificationSlice';
 import type {ImageJob} from '../store/slices/imageNotificationSlice';
+import type {ComicJob} from '../store/slices/comicNotificationSlice';
 import {fetchUnreadCounts, markPhotoViewed} from '../store/slices/appSlice';
 import CustomDialog from '../components/CustomDialog';
 import AnimateResultModal from '../components/AnimateResultModal';
@@ -44,12 +51,17 @@ import {GalleryCache} from '../utils/storage';
 import type {RootStackParamList} from '../navigation/RootNavigator';
 import {config} from '../utils/config';
 
-type TabType = 'photos' | 'videos';
+type TabType = 'photos' | 'videos' | 'comics';
 
 // Unified photo list item type
 type PhotoListItem =
   | {type: 'activeImage'; job: ImageJob}
   | {type: 'photo'; photo: UserPhoto};
+
+// Unified comic list item type
+type ComicListItem =
+  | {type: 'activeComic'; job: ComicJob}
+  | {type: 'comic'; comic: UserComic};
 
 // Unified video list item type
 type VideoListItem =
@@ -64,7 +76,7 @@ const MyCreationsScreen: React.FC = () => {
   const {colors} = useTheme();
   const dispatch = useAppDispatch();
   const accessToken = useAppSelector(state => state.auth.accessToken);
-  const {unopenedPhotosCount, unplayedVideosCount} = useAppSelector(state => state.app);
+  const {unopenedPhotosCount, unplayedVideosCount, unviewedComicsCount} = useAppSelector(state => state.app);
 
   const [activeTab, setActiveTab] = useState<TabType>(route.params?.initialTab || 'photos');
   const tabIndicatorAnim = useRef(new Animated.Value(0)).current;
@@ -122,10 +134,24 @@ const MyCreationsScreen: React.FC = () => {
   const [clearVideosDialogVisible, setClearVideosDialogVisible] = useState(false);
   const [isDeletingAllVideos, setIsDeletingAllVideos] = useState(false);
 
+  // ─── Comics state ───
+  const comicJobs = useAppSelector(state => state.comicNotification.jobs);
+  const [comics, setComics] = useState<UserComic[]>([]);
+  const [isLoadingComics, setIsLoadingComics] = useState(false);
+  const [isRefreshingComics, setIsRefreshingComics] = useState(false);
+  const [isLoadingMoreComics, setIsLoadingMoreComics] = useState(false);
+  const [hasMoreComics, setHasMoreComics] = useState(true);
+  const [nextComicCursor, setNextComicCursor] = useState<string | null>(null);
+  const [comicTotalCount, setComicTotalCount] = useState(0);
+  const [comicsLoaded, setComicsLoaded] = useState(false);
+  const [comicDeleteDialogVisible, setComicDeleteDialogVisible] = useState(false);
+  const [comicItemToDelete, setComicItemToDelete] = useState<string | null>(null);
+  const [isDeletingComic, setIsDeletingComic] = useState(false);
+
   // ─── Tab animation ───
   useEffect(() => {
     Animated.spring(tabIndicatorAnim, {
-      toValue: activeTab === 'photos' ? 0 : 1,
+      toValue: activeTab === 'photos' ? 0 : activeTab === 'videos' ? 1 : 2,
       useNativeDriver: true,
     }).start();
   }, [activeTab, tabIndicatorAnim]);
@@ -281,6 +307,108 @@ const MyCreationsScreen: React.FC = () => {
       setVideosLoaded(true);
     }
   }, [activeTab, videosLoaded, dispatch]);
+
+  // ─── Comics: fetch ───
+  const fetchComics = useCallback(async (cursor?: string, isRefresh = false) => {
+    if (!accessToken) return;
+
+    if (isRefresh) {
+      setIsRefreshingComics(true);
+    } else if (!cursor) {
+      setIsLoadingComics(true);
+    } else {
+      setIsLoadingMoreComics(true);
+    }
+
+    try {
+      const response = await fetchMyComics(accessToken, cursor);
+      const fetched = response.comics ?? [];
+
+      if (isRefresh || !cursor) {
+        setComics(fetched);
+      } else {
+        setComics(prev => [...prev, ...fetched]);
+      }
+
+      setHasMoreComics(response.hasMore ?? false);
+      setNextComicCursor(response.nextCursor ?? null);
+      setComicTotalCount(response.totalCount ?? 0);
+    } catch {
+      // Silently fail
+    } finally {
+      setIsLoadingComics(false);
+      setIsLoadingMoreComics(false);
+      setIsRefreshingComics(false);
+    }
+  }, [accessToken]);
+
+  // Load comics only when the comics tab is active
+  useEffect(() => {
+    if (activeTab === 'comics' && !comicsLoaded) {
+      fetchComics();
+      setComicsLoaded(true);
+    }
+  }, [activeTab, comicsLoaded, fetchComics]);
+
+  // ─── Comics: active jobs ───
+  const activeComicJobs = useMemo(
+    () => Object.values(comicJobs).filter(
+      j => j.status === 'pending' || j.status === 'processing',
+    ),
+    [comicJobs],
+  );
+
+  const comicListData: ComicListItem[] = useMemo(() => {
+    const items: ComicListItem[] = [];
+    activeComicJobs.forEach(job => items.push({type: 'activeComic', job}));
+    comics.forEach(comic => items.push({type: 'comic', comic}));
+    return items;
+  }, [activeComicJobs, comics]);
+
+  // ─── Comics: handlers ───
+  const handleComicRefresh = useCallback(() => {
+    fetchComics(undefined, true);
+  }, [fetchComics]);
+
+  const handleComicLoadMore = useCallback(() => {
+    if (!isLoadingMoreComics && hasMoreComics && nextComicCursor) {
+      fetchComics(nextComicCursor);
+    }
+  }, [isLoadingMoreComics, hasMoreComics, nextComicCursor, fetchComics]);
+
+  const handleComicDelete = (id: string) => {
+    setComicItemToDelete(id);
+    setComicDeleteDialogVisible(true);
+  };
+
+  const confirmComicDelete = async () => {
+    if (!comicItemToDelete || !accessToken) return;
+    setIsDeletingComic(true);
+    try {
+      await deleteComic(comicItemToDelete, accessToken);
+      setComics(prev => prev.filter(c => c.id !== comicItemToDelete));
+      setComicTotalCount(prev => prev - 1);
+      showMessage('success', 'Deleted', 'Comic deleted successfully');
+    } catch {
+      showMessage('error', 'Error', 'Failed to delete comic');
+    } finally {
+      setIsDeletingComic(false);
+      setComicDeleteDialogVisible(false);
+      setComicItemToDelete(null);
+    }
+  };
+
+  const cancelComicDelete = () => {
+    setComicDeleteDialogVisible(false);
+    setComicItemToDelete(null);
+  };
+
+  const handleMarkComicViewed = useCallback((comicId: string) => {
+    if (accessToken) {
+      markComicViewed(comicId, accessToken);
+      dispatch(fetchUnreadCounts());
+    }
+  }, [accessToken, dispatch]);
 
   // ─── Photos: handlers ───
   const showMessage = (type: 'success' | 'error' | 'warning', title: string, message: string) => {
@@ -732,6 +860,180 @@ const MyCreationsScreen: React.FC = () => {
     );
   };
 
+  // ─── Comics: render items ───
+  const renderComicItem = ({item}: {item: ComicListItem}) => {
+    if (item.type === 'activeComic') {
+      return (
+        <View style={[styles.gridItem, {backgroundColor: colors.backgroundTertiary}]}>
+          <View style={[styles.gridImage, {justifyContent: 'center', alignItems: 'center'}]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+          <View style={[styles.gridOverlay, {backgroundColor: 'rgba(0,0,0,0.5)'}]}>
+            <Text style={styles.gridLabel} numberOfLines={1}>
+              {item.job.status === 'pending' ? 'Queued...' : 'Processing...'}
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    const comic = item.comic;
+    const isPending = comic.status === 'Pending' || comic.status === 'Processing';
+    const isFailed = comic.status === 'Failed';
+    const isUnviewed = !isPending && !isFailed && !comic.hasBeenViewed;
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.gridItem,
+          {backgroundColor: colors.backgroundTertiary},
+          isUnviewed && {borderColor: colors.primary, borderWidth: 2},
+          isFailed && {borderColor: colors.error, borderWidth: 2},
+        ]}
+        onPress={() => {
+          if (!isPending && !isFailed) {
+            if (isUnviewed) handleMarkComicViewed(comic.id);
+            const comicIndex = comics.indexOf(comic);
+            const comicsAsPhotos = comics
+              .filter(c => c.status === 'Completed')
+              .map(c => ({
+                id: c.id,
+                relativeUrl: '',
+                fullUrl: c.fullUrl,
+                thumbnailFullUrl: c.thumbnailFullUrl,
+                originalImageRelativeUrl: null,
+                originalImageFullUrl: null,
+                fileName: c.fileName,
+                mimeType: c.mimeType,
+                fileSizeBytes: c.fileSizeBytes,
+                prompt: null,
+                generationType: 'Comic',
+                status: c.status,
+                hasBeenViewed: c.hasBeenViewed,
+                createdAt: c.createdAt,
+              }));
+            const mappedIndex = comicsAsPhotos.findIndex(p => p.id === comic.id);
+            navigation.navigate('PhotoDetail', {
+              photos: comicsAsPhotos,
+              currentIndex: mappedIndex >= 0 ? mappedIndex : 0,
+            });
+          }
+        }}
+        activeOpacity={isPending || isFailed ? 1 : 0.8}>
+        {isPending ? (
+          <View style={[styles.gridImage, {justifyContent: 'center', alignItems: 'center'}]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : isFailed ? (
+          <View style={[styles.gridImage, {justifyContent: 'center', alignItems: 'center'}]}>
+            <Ionicons name="alert-circle" size={32} color={colors.error} />
+          </View>
+        ) : (
+          <FastImage
+            source={{uri: comic.thumbnailFullUrl ?? comic.fullUrl, priority: FastImage.priority.normal, cache: FastImage.cacheControl.immutable}}
+            style={styles.gridImage}
+            resizeMode={FastImage.resizeMode.cover}
+          />
+        )}
+        {isFailed && (
+          <View style={styles.photoFailedBadge}>
+            <Text style={styles.photoFailedBadgeText}>FAILED</Text>
+          </View>
+        )}
+        {isUnviewed && (
+          <View style={styles.photoNewBadge}>
+            <Text style={styles.photoNewBadgeText}>NEW</Text>
+          </View>
+        )}
+        {/* Comic badge */}
+        {!isPending && !isFailed && (
+          <View style={styles.comicBadge}>
+            <Ionicons name="book" size={10} color="#fff" />
+          </View>
+        )}
+        <View style={[styles.gridOverlay, {backgroundColor: 'rgba(0,0,0,0.5)'}]}>
+          <Text style={styles.gridLabel} numberOfLines={1}>
+            {isPending ? (comic.status === 'Pending' ? 'Queued...' : 'Processing...') : isFailed ? 'Failed' : `Comic · ${comic.photoCount} photos`}
+          </Text>
+          <Text style={styles.gridDate}>{formatDate(comic.createdAt)}</Text>
+        </View>
+        {!isPending && (
+          <TouchableOpacity
+            style={styles.gridDeleteButton}
+            onPress={e => {
+              e.stopPropagation();
+              handleComicDelete(comic.id);
+            }}
+            activeOpacity={0.7}>
+            <View style={styles.gridDeleteButtonInner}>
+              <Text style={styles.gridDeleteIcon}>✕</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  const renderComicFooter = () => {
+    if (!isLoadingMoreComics) return null;
+    return (
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color={colors.primary} />
+        <Text style={[styles.footerText, {color: colors.textSecondary}]}>Loading more...</Text>
+      </View>
+    );
+  };
+
+  // ─── Comics tab content ───
+  const renderComicsTab = () => {
+    if (isLoadingComics && comics.length === 0 && activeComicJobs.length === 0) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, {color: colors.textSecondary}]}>Loading comics...</Text>
+        </View>
+      );
+    }
+
+    if (comics.length === 0 && activeComicJobs.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <View style={[styles.emptyIconContainer, {backgroundColor: colors.primary + '15'}]}>
+            <Ionicons name="book-outline" size={48} color={colors.primary} />
+          </View>
+          <Text style={[styles.emptyTitle, {color: colors.textPrimary}]}>No Comics Yet</Text>
+          <Text style={[styles.emptySubtitle, {color: colors.textTertiary}]}>
+            Your generated comics will appear here
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <FlatList
+        key="comics-grid"
+        data={comicListData}
+        renderItem={renderComicItem}
+        keyExtractor={item => item.type === 'activeComic' ? `comic-job-${item.job.comicId}` : item.comic.id}
+        numColumns={3}
+        contentContainerStyle={styles.gridContent}
+        columnWrapperStyle={styles.gridRow}
+        showsVerticalScrollIndicator={false}
+        onEndReached={handleComicLoadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={renderComicFooter}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshingComics}
+            onRefresh={handleComicRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      />
+    );
+  };
+
   // ─── Photos tab content ───
   const renderPhotosTab = () => {
     if (isLoadingPhotos && photos.length === 0 && activeImageJobs.length === 0) {
@@ -922,21 +1224,34 @@ const MyCreationsScreen: React.FC = () => {
             )}
           </View>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.tab}
+          onPress={() => setActiveTab('comics')}
+          activeOpacity={0.7}>
+          <View style={styles.tabLabelContainer}>
+            <Text
+              style={[
+                styles.tabText,
+                {color: activeTab === 'comics' ? colors.primary : colors.textTertiary},
+              ]}>
+              Comics
+            </Text>
+            {unviewedComicsCount > 0 && (
+              <View style={[styles.tabBadge, {backgroundColor: colors.primary}]}>
+                <Text style={styles.tabBadgeText}>
+                  {unviewedComicsCount > 99 ? '99+' : unviewedComicsCount}
+                </Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
         <Animated.View
           style={[
             styles.tabIndicator,
             {
               backgroundColor: colors.primary,
-              transform: [
-                {
-                  translateX: tabIndicatorAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 1],
-                  }),
-                },
-              ],
-              left: activeTab === 'photos' ? '0%' : '50%',
-              width: '50%',
+              left: activeTab === 'photos' ? '0%' : activeTab === 'videos' ? '33.33%' : '66.66%',
+              width: '33.33%',
             },
           ]}
         />
@@ -944,7 +1259,7 @@ const MyCreationsScreen: React.FC = () => {
 
       {/* Tab Content */}
       <View style={styles.tabContent}>
-        {activeTab === 'photos' ? renderPhotosTab() : renderVideosTab()}
+        {activeTab === 'photos' ? renderPhotosTab() : activeTab === 'videos' ? renderVideosTab() : renderComicsTab()}
       </View>
 
       {/* Photo Delete Confirmation Dialog */}
@@ -1024,6 +1339,20 @@ const MyCreationsScreen: React.FC = () => {
           {text: 'Cancel', onPress: cancelVideoDelete, style: 'default'},
         ]}
         onClose={cancelVideoDelete}
+      />
+
+      {/* Comic Delete Confirmation */}
+      <CustomDialog
+        visible={comicDeleteDialogVisible}
+        icon="trash-outline"
+        iconColor={colors.error}
+        title="Delete Comic"
+        message="Are you sure you want to delete this comic? This action cannot be undone."
+        buttons={[
+          {text: isDeletingComic ? 'Deleting...' : 'Delete', onPress: confirmComicDelete, style: 'cancel'},
+          {text: 'Cancel', onPress: cancelComicDelete, style: 'default'},
+        ]}
+        onClose={cancelComicDelete}
       />
     </View>
   );
@@ -1170,6 +1499,18 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  comicBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 30,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(168,85,247,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 5,
   },
   gridOverlay: {
     position: 'absolute',

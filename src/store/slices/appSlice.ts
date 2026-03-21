@@ -9,6 +9,7 @@ import type { RootState } from '../index';
 interface UnreadResponse {
   unopenedPhotosCount: number;
   unplayedVideosCount: number;
+  unviewedComicsCount: number;
   totalUnreadCount: number;
 }
 
@@ -20,6 +21,7 @@ interface AppState {
   networkStatus: 'online' | 'offline';
   unopenedPhotosCount: number;
   unplayedVideosCount: number;
+  unviewedComicsCount: number;
   viewedPhotoIds: Record<string, boolean>;
   businessMode: boolean;
 }
@@ -32,6 +34,7 @@ const initialState: AppState = {
   networkStatus: 'online',
   unopenedPhotosCount: 0,
   unplayedVideosCount: 0,
+  unviewedComicsCount: 0,
   viewedPhotoIds: {},
   businessMode: false,
 };
@@ -41,7 +44,7 @@ export const fetchUnreadCounts = createAsyncThunk(
   async (_, { getState }) => {
     const state = getState() as RootState;
     const token = state.auth.accessToken;
-    if (!token) return { unopenedPhotosCount: 0, unplayedVideosCount: 0, totalUnreadCount: 0 };
+    if (!token) return { unopenedPhotosCount: 0, unplayedVideosCount: 0, unviewedComicsCount: 0, totalUnreadCount: 0 };
     const response = await api.get<UnreadResponse>('/api/UserPhotos/unread', token);
     return response;
   },
@@ -80,6 +83,7 @@ const appSlice = createSlice({
     builder.addCase(fetchUnreadCounts.fulfilled, (state, action) => {
       state.unopenedPhotosCount = action.payload.unopenedPhotosCount;
       state.unplayedVideosCount = action.payload.unplayedVideosCount;
+      state.unviewedComicsCount = action.payload.unviewedComicsCount ?? 0;
     });
   },
 });

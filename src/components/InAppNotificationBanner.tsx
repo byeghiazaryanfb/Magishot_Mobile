@@ -16,11 +16,12 @@ import {useAppSelector} from '../store/hooks';
 import {useTheme} from '../theme/ThemeContext';
 import type {ImageJob} from '../store/slices/imageNotificationSlice';
 import type {VideoJob} from '../store/slices/videoNotificationSlice';
+import type {ComicJob} from '../store/slices/comicNotificationSlice';
 
 interface NotificationItem {
   id: string;
   type: 'success' | 'error';
-  mediaType: 'image' | 'video';
+  mediaType: 'image' | 'video' | 'comic';
   title: string;
   message: string;
 }
@@ -34,6 +35,7 @@ const InAppNotificationBanner: React.FC = () => {
   const insets = useSafeAreaInsets();
   const imageJobs = useAppSelector(state => state.imageNotification.jobs);
   const videoJobs = useAppSelector(state => state.videoNotification.jobs);
+  const comicJobs = useAppSelector(state => state.comicNotification.jobs);
 
   const [currentNotification, setCurrentNotification] = useState<NotificationItem | null>(null);
   const queueRef = useRef<NotificationItem[]>([]);
@@ -43,6 +45,7 @@ const InAppNotificationBanner: React.FC = () => {
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevImageJobsRef = useRef<Record<string, ImageJob>>({});
   const prevVideoJobsRef = useRef<Record<string, VideoJob>>({});
+  const prevComicJobsRef = useRef<Record<string, ComicJob>>({});
 
   const dismiss = useCallback(() => {
     if (dismissTimer.current) {
@@ -179,6 +182,35 @@ const InAppNotificationBanner: React.FC = () => {
     prevVideoJobsRef.current = {...videoJobs};
   }, [videoJobs, enqueue]);
 
+  // Watch for comic job status transitions
+  useEffect(() => {
+    const prevJobs = prevComicJobsRef.current;
+
+    Object.entries(comicJobs).forEach(([comicId, job]) => {
+      const prevStatus = prevJobs[comicId]?.status;
+
+      if (job.status === 'ready' && prevStatus && prevStatus !== 'ready') {
+        enqueue({
+          id: `comic-${comicId}`,
+          type: 'success',
+          mediaType: 'comic',
+          title: 'Comic Ready!',
+          message: 'Your comic has been generated. Tap to view.',
+        });
+      } else if (job.status === 'failed' && prevStatus && prevStatus !== 'failed') {
+        enqueue({
+          id: `comic-${comicId}`,
+          type: 'error',
+          mediaType: 'comic',
+          title: 'Comic Failed',
+          message: job.errorMessage || 'Something went wrong. Please try again.',
+        });
+      }
+    });
+
+    prevComicJobsRef.current = {...comicJobs};
+  }, [comicJobs, enqueue]);
+
   useEffect(() => {
     return () => {
       if (dismissTimer.current) {
@@ -188,9 +220,9 @@ const InAppNotificationBanner: React.FC = () => {
   }, []);
 
   const handleTap = useCallback(() => {
-    const isVideo = currentNotification?.mediaType === 'video';
+    const mediaType = currentNotification?.mediaType;
     dismiss();
-    navigate('MyCreations', {initialTab: isVideo ? 'videos' : 'photos'});
+    navigate('MyCreations', {initialTab: mediaType === 'video' ? 'videos' : mediaType === 'comic' ? 'comics' : 'photos'});
   }, [dismiss, currentNotification]);
 
   if (!currentNotification) {
@@ -198,16 +230,18 @@ const InAppNotificationBanner: React.FC = () => {
   }
 
   const isSuccess = currentNotification.type === 'success';
-  const isVideo = currentNotification.mediaType === 'video';
+  const mediaType = currentNotification.mediaType;
 
   const gradientColors = isSuccess
     ? [colors.gradientStart, colors.gradientEnd]
     : [colors.error, colors.error + 'CC'];
 
   const iconName = isSuccess
-    ? isVideo
+    ? mediaType === 'video'
       ? 'videocam'
-      : 'image'
+      : mediaType === 'comic'
+        ? 'book'
+        : 'image'
     : 'alert-circle';
 
   const progressWidth = progressAnim.interpolate({

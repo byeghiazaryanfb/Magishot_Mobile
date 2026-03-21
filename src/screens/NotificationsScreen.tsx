@@ -75,8 +75,9 @@ const NotificationsScreen: React.FC = () => {
       if (!item.isRead) {
         dispatch(markNotificationRead(item.id));
       }
+      const isComicNotif = item.resourceType === 'comic' || /comic/i.test(item.title);
       const isVideoNotif = item.resourceType === 'video' || /video/i.test(item.title);
-      const initialTab = isVideoNotif ? 'videos' : 'photos';
+      const initialTab = isComicNotif ? 'comics' : isVideoNotif ? 'videos' : 'photos';
       navigation.push('MyCreations', {initialTab});
     },
     [dispatch, navigation],
@@ -148,9 +149,12 @@ const NotificationsScreen: React.FC = () => {
     ({item}: {item: Notification}) => {
       const isFailed = item.status === 'failed' || /fail/i.test(item.title);
       const statusColor = isFailed ? '#FF4757' : '#2ED573';
+      const isComic =
+        item.resourceType === 'comic' ||
+        /comic/i.test(item.title);
       const isVideo =
-        item.resourceType === 'video' ||
-        /video/i.test(item.title);
+        !isComic && (item.resourceType === 'video' ||
+        /video/i.test(item.title));
       const unreadBg = isFailed
         ? 'rgba(255, 71, 87, 0.08)'
         : 'rgba(46, 213, 115, 0.08)';
@@ -199,7 +203,7 @@ const NotificationsScreen: React.FC = () => {
                   {backgroundColor: isFailed ? 'rgba(255, 71, 87, 0.15)' : 'rgba(46, 213, 115, 0.15)'},
                 ]}>
                 <Ionicons
-                  name={isVideo ? 'videocam' : 'image'}
+                  name={isComic ? 'book' : isVideo ? 'videocam' : 'image'}
                   size={22}
                   color={statusColor}
                 />

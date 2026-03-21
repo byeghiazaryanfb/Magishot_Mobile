@@ -42,6 +42,19 @@ type SynthesizeFailedCallback = (data: {
   errorMessage?: string;
 }) => void;
 
+type ComicProcessingCallback = (data: {comicId: string}) => void;
+type ComicReadyCallback = (data: {
+  comicId: string;
+  imageUrl: string;
+  fileName?: string;
+  mimeType?: string;
+  thumbnailUrl?: string;
+}) => void;
+type ComicFailedCallback = (data: {
+  comicId: string;
+  errorMessage?: string;
+}) => void;
+
 class NotificationService {
   private connection: HubConnection | null = null;
   private onProcessing: VideoProcessingCallback | null = null;
@@ -53,6 +66,9 @@ class NotificationService {
   private onSynthesizeProcessing: SynthesizeProcessingCallback | null = null;
   private onSynthesizeReady: SynthesizeReadyCallback | null = null;
   private onSynthesizeFailed: SynthesizeFailedCallback | null = null;
+  private onComicProcessing: ComicProcessingCallback | null = null;
+  private onComicReady: ComicReadyCallback | null = null;
+  private onComicFailed: ComicFailedCallback | null = null;
 
   setEventCallbacks(
     onProcessing: VideoProcessingCallback,
@@ -82,6 +98,16 @@ class NotificationService {
     this.onSynthesizeProcessing = onProcessing;
     this.onSynthesizeReady = onReady;
     this.onSynthesizeFailed = onFailed;
+  }
+
+  setComicEventCallbacks(
+    onProcessing: ComicProcessingCallback,
+    onReady: ComicReadyCallback,
+    onFailed: ComicFailedCallback,
+  ) {
+    this.onComicProcessing = onProcessing;
+    this.onComicReady = onReady;
+    this.onComicFailed = onFailed;
   }
 
   async connect(accessToken: string): Promise<void> {
@@ -247,6 +273,42 @@ class NotificationService {
       (data: {photoIds: string[]; errorMessage?: string}) => {
         console.log('[SignalR] SynthesizeFailed:', data.photoIds, data.errorMessage);
         this.onSynthesizeFailed?.(data);
+      },
+    );
+
+    // Comic events
+    this.connection.on('ComicProcessing', (data: {comicId: string}) => {
+      console.log('[SignalR] ComicProcessing:', data.comicId);
+      this.onComicProcessing?.(data);
+    });
+
+    this.connection.on(
+      'ComicReady',
+      (data: {
+        comicId: string;
+        imageUrl: string;
+        fileName?: string;
+        mimeType?: string;
+        thumbnailUrl?: string;
+      }) => {
+        console.log('[SignalR] ComicReady:', data.comicId, 'url:', data.imageUrl);
+        const imageUrl =
+          data.imageUrl && !data.imageUrl.startsWith('http')
+            ? `${config.apiBaseUrl}${data.imageUrl.startsWith('/') ? '' : '/'}${data.imageUrl}`
+            : data.imageUrl;
+        const thumbnailUrl =
+          data.thumbnailUrl && !data.thumbnailUrl.startsWith('http')
+            ? `${config.apiBaseUrl}${data.thumbnailUrl.startsWith('/') ? '' : '/'}${data.thumbnailUrl}`
+            : data.thumbnailUrl;
+        this.onComicReady?.({...data, imageUrl, thumbnailUrl});
+      },
+    );
+
+    this.connection.on(
+      'ComicFailed',
+      (data: {comicId: string; errorMessage?: string}) => {
+        console.log('[SignalR] ComicFailed:', data.comicId, data.errorMessage);
+        this.onComicFailed?.(data);
       },
     );
   }

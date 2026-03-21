@@ -11,6 +11,7 @@ import tryOnReducer from './slices/tryOnSlice';
 import videoNotificationReducer from './slices/videoNotificationSlice';
 import imageNotificationReducer from './slices/imageNotificationSlice';
 import notificationReducer from './slices/notificationSlice';
+import comicNotificationReducer from './slices/comicNotificationSlice';
 
 export const store = configureStore({
   reducer: {
@@ -22,6 +23,7 @@ export const store = configureStore({
     videoNotification: videoNotificationReducer,
     imageNotification: imageNotificationReducer,
     notification: notificationReducer,
+    comicNotification: comicNotificationReducer,
   },
   middleware: getDefaultMiddleware =>
     getDefaultMiddleware({

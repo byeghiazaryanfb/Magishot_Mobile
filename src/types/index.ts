@@ -24,12 +24,16 @@ export interface RegisterRequest {
   username: string;
   email: string;
   password: string;
+  termsAccepted: boolean;
+  privacyPolicyAccepted: boolean;
 }
 
 export interface ExternalLoginRequest {
   provider: 'google' | 'apple';
   idToken: string;
   fullName: string;
+  termsAccepted: boolean;
+  privacyPolicyAccepted: boolean;
 }
 
 export interface ApiError {

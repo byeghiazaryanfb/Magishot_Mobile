@@ -27,6 +27,7 @@ import type {RootState} from '../store';
 import {useAppDispatch} from '../store/hooks';
 import {addPendingImageJob} from '../store/slices/imageNotificationSlice';
 import {fetchCoinBalance} from '../store/slices/authSlice';
+import {useServicePrices} from '../hooks/useServicePrices';
 
 type ImageTemplateDetailRouteProp = RouteProp<RootStackParamList, 'ImageTemplateDetail'>;
 
@@ -47,12 +48,13 @@ const ImageTemplateScreen: React.FC = () => {
   const {template: initialTemplate, templates, currentIndex: initialIndex} = route.params;
   const accessToken = useSelector((state: RootState) => state.auth.accessToken);
   const dispatch = useAppDispatch();
+  const {animationPrice} = useServicePrices();
 
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
-  const [creationAnimation, setCreationAnimation] = useState(true);
+  const [creationAnimation, setCreationAnimation] = useState(false);
   const [dialog, setDialog] = useState<{visible: boolean; title: string; message: string; type: 'error' | 'success'}>({visible: false, title: '', message: '', type: 'success'});
   const [showFullScreen, setShowFullScreen] = useState(false);
   const [fullScreenUri, setFullScreenUri] = useState<string | null>(null);
@@ -94,7 +96,7 @@ const ImageTemplateScreen: React.FC = () => {
   // Reserve space: description ~30, progress ~40 (multi only), checkbox ~36, section label ~24, gaps ~30
   const chromeHeight = (template.description ? 30 : 0)
     + (isMultiPhoto ? 36 : 0)
-    + (template.videoAnimationEnabled ? 36 : 0)
+    + (template.videoAnimationEnabled ? 36 : 0) // animation checkbox
     + 24 // section label
     + 30; // misc gaps
   const contentHeight = availableHeight - chromeHeight;
@@ -240,9 +242,7 @@ const ImageTemplateScreen: React.FC = () => {
         formData.append('image', {uri: filledImages[0].uri, type: 'image/jpeg', name: 'user_photo.jpg'} as any);
       }
 
-      if (template.videoAnimationEnabled) {
-        formData.append('creationAnimation', String(creationAnimation));
-      }
+      formData.append('creationAnimation', String(creationAnimation));
 
       const headers: Record<string, string> = {'Content-Type': 'multipart/form-data'};
       if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
@@ -436,24 +436,26 @@ const ImageTemplateScreen: React.FC = () => {
           <View style={styles.slotsContainer}>
             {imageSlots.map((slot, index) => renderSlot(slot, index))}
           </View>
+          {/* Creation Animation Checkbox */}
+          {template.videoAnimationEnabled && (
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setCreationAnimation(prev => !prev)}
+              activeOpacity={0.7}>
+              <Ionicons
+                name={creationAnimation ? 'checkbox' : 'square-outline'}
+                size={28}
+                color={creationAnimation ? colors.primary : colors.textSecondary}
+              />
+              <Text style={[styles.checkboxLabel, {color: colors.textPrimary}]}>
+                Also Generate Animation
+                {animationPrice && !animationPrice.isFree && animationPrice.estimatedCoins > 0 && (
+                  <Text style={{color: '#FFD700'}}>{` (${animationPrice.estimatedCoins} ★)`}</Text>
+                )}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
-
-        {/* Creation Animation Checkbox */}
-        {template.videoAnimationEnabled && (
-          <TouchableOpacity
-            style={styles.checkboxRow}
-            onPress={() => setCreationAnimation(prev => !prev)}
-            activeOpacity={0.7}>
-            <Ionicons
-              name={creationAnimation ? 'checkbox' : 'square-outline'}
-              size={22}
-              color={creationAnimation ? colors.primary : colors.textSecondary}
-            />
-            <Text style={[styles.checkboxLabel, {color: colors.textPrimary}]}>
-              Creation Animation
-            </Text>
-          </TouchableOpacity>
-        )}
       </Animated.View>
 
       {/* Generate Button — fixed at bottom */}
@@ -466,6 +468,20 @@ const ImageTemplateScreen: React.FC = () => {
                 ? `Add ${minRequired - filledSlots} Photo${minRequired - filledSlots !== 1 ? 's' : ''}`
                 : 'Generate'
           }
+          titleSuffix={(() => {
+            if (isGenerating || !canGenerate) return undefined;
+            const baseCost = !template.isFree && template.estimatedCoins ? template.estimatedCoins : 0;
+            const animCost = creationAnimation && animationPrice && !animationPrice.isFree ? (animationPrice.estimatedCoins || 0) : 0;
+            const totalCost = baseCost + animCost;
+            return totalCost > 0 ? ` (${totalCost} ★)` : ' (Free)';
+          })()}
+          titleSuffixColor={(() => {
+            if (isGenerating || !canGenerate) return undefined;
+            const baseCost = !template.isFree && template.estimatedCoins ? template.estimatedCoins : 0;
+            const animCost = creationAnimation && animationPrice && !animationPrice.isFree ? (animationPrice.estimatedCoins || 0) : 0;
+            const totalCost = baseCost + animCost;
+            return totalCost > 0 ? '#FFD700' : '#4ADE80';
+          })()}
           onPress={handleGenerate}
           disabled={isGenerating}
           loading={isGenerating}
@@ -724,6 +740,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
+    marginTop: 2,
     gap: 8,
   },
   checkboxLabel: {

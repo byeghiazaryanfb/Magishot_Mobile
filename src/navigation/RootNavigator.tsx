@@ -12,6 +12,7 @@ import MyCreationsScreen from '../screens/MyCreationsScreen';
 import PhotoDetailScreen from '../screens/PhotoDetailScreen';
 import SubtitleScreen from '../screens/SubtitleScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import ComicsScreen from '../screens/ComicsScreen';
 import type {UserPhoto} from '../services/userPhotosApi';
 
 interface VideoResult {
@@ -43,6 +44,8 @@ interface VideoTemplateType {
   categoryId?: string | null;
   categoryName?: string | null;
   videoAnimationEnabled?: boolean;
+  estimatedCoins?: number;
+  isFree?: boolean;
 }
 
 export type RootStackParamList = {
@@ -50,7 +53,7 @@ export type RootStackParamList = {
   Profile: undefined;
   HelpCenter: undefined;
   Subscription: undefined;
-  MyCreations: {initialTab?: 'photos' | 'videos'} | undefined;
+  MyCreations: {initialTab?: 'photos' | 'videos' | 'comics'} | undefined;
   PhotoDetail: {
     photos: UserPhoto[];
     currentIndex: number;
@@ -71,6 +74,7 @@ export type RootStackParamList = {
   };
   Subtitle: undefined;
   Notifications: undefined;
+  Comics: {comicId?: string} | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -152,6 +156,13 @@ const RootNavigator: React.FC = () => {
       <Stack.Screen
         name="Notifications"
         component={NotificationsScreen}
+        options={{
+          animation: 'slide_from_right',
+        }}
+      />
+      <Stack.Screen
+        name="Comics"
+        component={ComicsScreen}
         options={{
           animation: 'slide_from_right',
         }}

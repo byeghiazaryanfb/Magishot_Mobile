@@ -6,6 +6,9 @@ import {
   TouchableOpacity,
   Image,
   Switch,
+  Modal,
+  ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import {
   createDrawerNavigator,
@@ -21,6 +24,7 @@ import {logoutUser, fetchCoinBalance} from '../store/slices/authSlice';
 import {fetchUnreadCounts} from '../store/slices/appSlice';
 import TabNavigator from './TabNavigator';
 import Logo from '../components/Logo';
+import {config} from '../utils/config';
 import PalettePickerModal from '../components/PalettePickerModal';
 import ContactSupportModal from '../components/ContactSupportModal';
 import CustomDialog from '../components/CustomDialog';
@@ -99,6 +103,9 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
   const [comingSoonFeature, setComingSoonFeature] = useState('');
   const [showOnboardingPreview, setShowOnboardingPreview] = useState(false);
   const [showWelcomePreview, setShowWelcomePreview] = useState(false);
+  const [legalModal, setLegalModal] = useState<{visible: boolean; title: string; content: string; isLoading: boolean}>({
+    visible: false, title: '', content: '', isLoading: false,
+  });
   const {username, refreshToken, accessToken, coinBalance} = useAppSelector(state => state.auth);
   const {unopenedPhotosCount, unplayedVideosCount} = useAppSelector(state => state.app);
   const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount;
@@ -111,6 +118,46 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
       dispatch(fetchUnreadCounts());
     }
   }, [drawerStatus, accessToken, dispatch]);
+
+  const openLegalContent = async (type: 'terms' | 'privacy') => {
+    const title = type === 'terms' ? 'Terms & Conditions' : 'Privacy Policy';
+    const endpoint = type === 'terms' ? 'terms_and_conditions' : 'privacy_policy';
+    setLegalModal({visible: true, title, content: '', isLoading: true});
+    try {
+      const response = await fetch(`${config.apiBaseUrl}/api/SystemSettings/${endpoint}`);
+      const json = await response.json();
+      setLegalModal(prev => ({...prev, content: json.value || '', isLoading: false}));
+    } catch {
+      setLegalModal(prev => ({...prev, content: 'Failed to load content. Please try again.', isLoading: false}));
+    }
+  };
+
+  const renderMarkdownLine = (line: string, index: number) => {
+    const trimmed = line.trim();
+    if (!trimmed) return <View key={index} style={{height: 10}} />;
+    if (trimmed.startsWith('### ')) return <Text key={index} style={styles.mdH3}>{trimmed.slice(4).replace(/\*\*/g, '')}</Text>;
+    if (trimmed.startsWith('## ')) return <Text key={index} style={styles.mdH2}>{trimmed.slice(3).replace(/\*\*/g, '')}</Text>;
+    if (trimmed.startsWith('# ')) return <Text key={index} style={styles.mdH1}>{trimmed.slice(2).replace(/\*\*/g, '')}</Text>;
+    if (/^[-*_]{3,}$/.test(trimmed)) return <View key={index} style={styles.mdHr} />;
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      return (
+        <View key={index} style={styles.mdBulletRow}>
+          <Text style={styles.mdBulletDot}>{'\u2022'}</Text>
+          <Text style={styles.mdBody}>{renderInlineBold(trimmed.slice(2))}</Text>
+        </View>
+      );
+    }
+    return <Text key={index} style={styles.mdBody}>{renderInlineBold(trimmed)}</Text>;
+  };
+
+  const renderInlineBold = (text: string) => {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, i) =>
+      part.startsWith('**') && part.endsWith('**')
+        ? <Text key={i} style={styles.mdBold}>{part.slice(2, -2)}</Text>
+        : part,
+    );
+  };
 
   const handleLogout = () => {
     setShowLogoutConfirm(true);
@@ -296,6 +343,16 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
             label="Rate App"
             onPress={() => handleMenuPress('Rate App')}
           />
+          <MenuItem
+            icon="document-text-outline"
+            label="Terms & Conditions"
+            onPress={() => openLegalContent('terms')}
+          />
+          <MenuItem
+            icon="shield-checkmark-outline"
+            label="Privacy Policy"
+            onPress={() => openLegalContent('privacy')}
+          />
         </View>
 
         {/* Developer / Preview Section - TEMPORARY */}
@@ -395,6 +452,42 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
         ]}
         onClose={() => setShowComingSoon(false)}
       />
+      {/* Legal Content Modal */}
+      <Modal
+        visible={legalModal.visible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLegalModal(prev => ({...prev, visible: false}))}>
+        <View style={styles.legalOverlay}>
+          <View style={styles.legalContainer}>
+            <View style={styles.legalHeader}>
+              <Text style={styles.legalTitle}>{legalModal.title}</Text>
+              <TouchableOpacity
+                onPress={() => setLegalModal(prev => ({...prev, visible: false}))}
+                style={styles.legalClose}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            {legalModal.isLoading ? (
+              <View style={styles.legalLoading}>
+                <ActivityIndicator size="large" color="#FF1B6D" />
+              </View>
+            ) : (
+              <ScrollView style={styles.legalScroll} showsVerticalScrollIndicator>
+                {legalModal.content.split('\n').map((line, i) => renderMarkdownLine(line, i))}
+                <View style={{height: 20}} />
+              </ScrollView>
+            )}
+            <TouchableOpacity
+              style={styles.legalButton}
+              onPress={() => setLegalModal(prev => ({...prev, visible: false}))}
+              activeOpacity={0.8}>
+              <Text style={styles.legalButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Welcome Screen Preview Overlay */}
       {showWelcomePreview && (
         <View style={styles.previewOverlay}>
@@ -599,6 +692,111 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     marginRight: 14,
+  },
+  // Legal modal
+  legalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  legalContainer: {
+    backgroundColor: '#1a1a2e',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '85%',
+    paddingBottom: 34,
+  },
+  legalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  legalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  legalClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  legalLoading: {
+    paddingVertical: 60,
+    alignItems: 'center',
+  },
+  legalScroll: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  legalButton: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    backgroundColor: '#FF1B6D',
+  },
+  legalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Markdown
+  mdH1: {
+    fontSize: 22,
+    fontWeight: '800' as const,
+    color: '#fff',
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  mdH2: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: '#fff',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  mdH3: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: 'rgba(255,255,255,0.95)',
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  mdBody: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: 'rgba(255,255,255,0.75)',
+    marginBottom: 4,
+  },
+  mdBold: {
+    fontWeight: '700' as const,
+    color: 'rgba(255,255,255,0.9)',
+  },
+  mdBulletRow: {
+    flexDirection: 'row' as const,
+    paddingLeft: 4,
+    marginBottom: 4,
+  },
+  mdBulletDot: {
+    fontSize: 14,
+    color: '#FF1B6D',
+    marginRight: 8,
+    marginTop: 1,
+  },
+  mdHr: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginVertical: 16,
   },
   previewOverlay: {
     ...StyleSheet.absoluteFillObject,
