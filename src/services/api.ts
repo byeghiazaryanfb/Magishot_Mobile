@@ -133,8 +133,9 @@ class ApiService {
     console.log('=== API RESPONSE ===');
     console.log('Status:', response.status, response.statusText);
 
-    // Handle 401 Unauthorized - try to refresh token (skip for login/register/auth endpoints)
-    const isAuthEndpoint = endpoint.toLowerCase().includes('/auth/');
+    // Handle 401 Unauthorized - try to refresh token (skip for login/register/refresh endpoints)
+    const authSkipPaths = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/external', '/auth/forgot-password', '/auth/reset-password'];
+    const isAuthEndpoint = authSkipPaths.some(path => endpoint.toLowerCase().includes(path));
     if (response.status === 401 && !isRetry && !isAuthEndpoint && this.getTokens && this.onTokenRefresh) {
       console.log('Received 401, attempting token refresh...');
       try {

@@ -597,6 +597,8 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
       onPress={() => {
         if (isExpanded) {
           collapseIcons();
+        } else {
+          expandIcons();
         }
       }}>
       {/* Stacked/Expandable Accessory Icons */}
@@ -622,7 +624,6 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
                     triggerHaptic();
                     if (isExpanded) {
                       toggleSelection(item.id);
-                      collapseIcons();
                     } else {
                       toggleExpand();
                     }
@@ -698,7 +699,8 @@ const AccessoriesBar = forwardRef<AccessoriesBarRef>((_, ref) => {
       {selectedItems.length > 0 && (
         <ScrollView
           horizontal
-          showsHorizontalScrollIndicator={false}
+          showsHorizontalScrollIndicator={true}
+          indicatorStyle="white"
           style={styles.selectedScroll}
           contentContainerStyle={styles.carouselContent}>
           {selectedItems.map(item => {

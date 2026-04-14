@@ -23,11 +23,12 @@ import AuthNavigator from './src/navigation/AuthNavigator';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import PaywallScreen from './src/screens/PaywallScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
-import {OnboardingStorage, AuthStorage} from './src/utils/storage';
+import AccountDeletedScreen from './src/screens/AccountDeletedScreen';
+import {OnboardingStorage, AuthStorage, WelcomeStorage} from './src/utils/storage';
 import {initializeAuth, clearAuth, updateTokens} from './src/store/slices/authSlice';
 import {fetchVideoGallery, resetGallery, clearStaleJobs} from './src/store/slices/videoNotificationSlice';
 import {clearStaleImageJobs} from './src/store/slices/imageNotificationSlice';
-import {fetchUnreadCounts} from './src/store/slices/appSlice';
+import {fetchUnreadCounts, setAccountDeleted} from './src/store/slices/appSlice';
 import {fetchNotificationUnreadCount} from './src/store/slices/notificationSlice';
 import api from './src/services/api';
 import SignalRListener from './src/components/SignalRListener';
@@ -202,7 +203,7 @@ function AppContent() {
   const dispatch = useAppDispatch();
 
   // Auth state
-  const {isAuthenticated, isInitialized} =
+  const {isAuthenticated, isInitialized, email: userEmail} =
     useAppSelector(state => state.auth);
 
   // Loading state
@@ -211,17 +212,38 @@ function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [minDelayComplete, setMinDelayComplete] = useState(false);
   const [appReady, setAppReady] = useState(false);
+  const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
 
   // Onboarding state
   const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(true);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(true);
   const [showPaywall, setShowPaywall] = useState(false);
+  const accountDeleted = useAppSelector(state => state.app.accountDeleted);
 
   // Minimum 5 second delay with smooth progress animation
   const SPLASH_DURATION = 5000; // 5 seconds
 
-  // Smooth progress animation over 5 seconds
+  // Check if this is the first launch on this device
   useEffect(() => {
+    (async () => {
+      const seen = await WelcomeStorage.hasSeenWelcome();
+      if (seen) {
+        // Not first launch — skip splash entirely
+        setIsFirstLaunch(false);
+        setMinDelayComplete(true);
+        setLoadingProgress(1);
+      } else {
+        // First launch — show splash and mark as seen
+        setIsFirstLaunch(true);
+        await WelcomeStorage.setWelcomeSeen();
+      }
+    })();
+  }, []);
+
+  // Smooth progress animation over 5 seconds (only on first launch)
+  useEffect(() => {
+    if (isFirstLaunch !== true) return;
+
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
       const elapsed = Date.now() - startTime;
@@ -252,14 +274,18 @@ function AppContent() {
     }, 50); // Update every 50ms for smooth animation
 
     return () => clearInterval(progressInterval);
-  }, []);
+  }, [isFirstLaunch]);
 
   // Check if we can hide the loading screen (both delay complete and app ready)
   useEffect(() => {
     if (minDelayComplete && appReady) {
-      setTimeout(() => setIsLoading(false), 300);
+      if (isFirstLaunch) {
+        setTimeout(() => setIsLoading(false), 300);
+      } else {
+        setIsLoading(false);
+      }
     }
-  }, [minDelayComplete, appReady]);
+  }, [minDelayComplete, appReady, isFirstLaunch]);
 
   // Set up API token callbacks for automatic token refresh
   useEffect(() => {
@@ -335,10 +361,11 @@ function AppContent() {
       // Mark app as ready (effect above will handle hiding loading screen)
       setAppReady(true);
     }
-  }, [isInitialized, isAuthenticated]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInitialized, isAuthenticated, userEmail]);
 
   const checkOnboardingStatus = async () => {
-    const seen = await OnboardingStorage.hasSeenOnboarding();
+    const seen = await OnboardingStorage.hasSeenOnboarding(userEmail || undefined);
     setHasSeenOnboarding(seen);
     setIsCheckingOnboarding(false);
     // Mark app as ready (effect above will handle hiding loading screen)
@@ -346,7 +373,7 @@ function AppContent() {
   };
 
   const handleOnboardingComplete = async () => {
-    await OnboardingStorage.setOnboardingComplete();
+    await OnboardingStorage.setOnboardingComplete(userEmail || undefined);
     setHasSeenOnboarding(true);
     // Show paywall after onboarding
     setShowPaywall(true);
@@ -364,12 +391,25 @@ function AppContent() {
 
   // Determine which content to show
   const renderContent = () => {
-    // Still initializing - show welcome screen with progress bar
+    // Still initializing - show welcome screen with progress bar only on first launch
     if (!isInitialized || isCheckingOnboarding || isLoading) {
+      if (isFirstLaunch) {
+        return (
+          <WelcomeScreen
+            progress={loadingProgress}
+            statusText={loadingStatus}
+          />
+        );
+      }
+      // On subsequent launches, show nothing (blank) while initializing briefly
+      return <View style={[styles.appContainer, {backgroundColor: '#0f0f23'}]} />;
+    }
+
+    // Show goodbye screen after account deletion
+    if (accountDeleted) {
       return (
-        <WelcomeScreen
-          progress={loadingProgress}
-          statusText={loadingStatus}
+        <AccountDeletedScreen
+          onContinue={() => dispatch(setAccountDeleted(false))}
         />
       );
     }

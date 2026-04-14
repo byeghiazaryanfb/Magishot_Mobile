@@ -27,6 +27,8 @@ import {ImageAsset} from '../services/imageTransform';
 import RNFS from 'react-native-fs';
 import {addPendingImageJob} from '../store/slices/imageNotificationSlice';
 import {triggerHaptic} from '../utils/haptics';
+import AiConsentDialog from '../components/AiConsentDialog';
+import {useAiConsent} from '../hooks/useAiConsent';
 
 
 interface BusinessCategory {
@@ -69,6 +71,7 @@ const ForBusinessScreen: React.FC = () => {
     state => state.notification.unreadCount,
   );
   const accessToken = useAppSelector(state => state.auth.accessToken);
+  const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
 
   const [productPhoto, setProductPhoto] = useState<ImageAsset | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -160,8 +163,9 @@ const ForBusinessScreen: React.FC = () => {
     }
   }, [templatesLoading, selectedCategory, productPhoto, templates.length]);
 
-  const handleTemplateGenerate = (generateConfig: Record<string, any>) => {
+  const handleTemplateGenerate = async (generateConfig: Record<string, any>) => {
     if (!productPhoto || !accessToken) return;
+    if (!(await requireConsent())) return;
     setSelectedTemplate(null);
     // Wait for modal to fully unmount, then run API call
     setTimeout(async () => {
@@ -706,6 +710,7 @@ const ForBusinessScreen: React.FC = () => {
           <Text style={styles.generatingText}>Submitting...</Text>
         </View>
       )}
+      <AiConsentDialog visible={consentVisible} onAccept={onConsentAccept} onDecline={onConsentDecline} />
     </View>
   );
 };

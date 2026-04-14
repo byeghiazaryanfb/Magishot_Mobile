@@ -21,6 +21,7 @@ import {
   getUserPhotos,
   deleteUserPhoto,
   deleteAllUserPhotos,
+  deleteBatchUserPhotos,
   markPhotoOpened,
   UserPhoto,
 } from '../services/userPhotosApi';
@@ -148,13 +149,65 @@ const MyCreationsScreen: React.FC = () => {
   const [comicItemToDelete, setComicItemToDelete] = useState<string | null>(null);
   const [isDeletingComic, setIsDeletingComic] = useState(false);
 
+  // ─── Selection mode state ───
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
+  const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set());
+  const [selectedComicIds, setSelectedComicIds] = useState<Set<string>>(new Set());
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false);
+  const [clearSelectedDialogVisible, setClearSelectedDialogVisible] = useState(false);
+
+  const exitSelectionMode = useCallback(() => {
+    setIsSelectionMode(false);
+    setSelectedPhotoIds(new Set());
+    setSelectedVideoIds(new Set());
+    setSelectedComicIds(new Set());
+  }, []);
+
+  const deselectAll = useCallback(() => {
+    setSelectedPhotoIds(new Set());
+    setSelectedVideoIds(new Set());
+    setSelectedComicIds(new Set());
+  }, []);
+
+  const togglePhotoSelection = useCallback((id: string) => {
+    setSelectedPhotoIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  }, []);
+
+  const toggleVideoSelection = useCallback((id: string) => {
+    setSelectedVideoIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  }, []);
+
+  const toggleComicSelection = useCallback((id: string) => {
+    setSelectedComicIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  }, []);
+
+  const currentSelectionCount =
+    activeTab === 'photos' ? selectedPhotoIds.size :
+    activeTab === 'videos' ? selectedVideoIds.size :
+    selectedComicIds.size;
+
   // ─── Tab animation ───
   useEffect(() => {
     Animated.spring(tabIndicatorAnim, {
       toValue: activeTab === 'photos' ? 0 : activeTab === 'videos' ? 1 : 2,
       useNativeDriver: true,
     }).start();
-  }, [activeTab, tabIndicatorAnim]);
+    // Exit selection mode when switching tabs
+    exitSelectionMode();
+  }, [activeTab, tabIndicatorAnim, exitSelectionMode]);
 
   // ─── Mark individual video viewed when played ───
   const handleMarkViewed = useCallback((videoId: string) => {
@@ -473,6 +526,44 @@ const MyCreationsScreen: React.FC = () => {
     setClearAllDialogVisible(false);
   };
 
+  const handleClearSelected = () => {
+    setClearSelectedDialogVisible(true);
+  };
+
+  const confirmClearSelected = async () => {
+    if (!accessToken) return;
+    setIsDeletingSelected(true);
+    try {
+      if (activeTab === 'photos' && selectedPhotoIds.size > 0) {
+        const ids = Array.from(selectedPhotoIds);
+        const response = await deleteBatchUserPhotos(accessToken, ids);
+        setPhotos(prev => prev.filter(p => !selectedPhotoIds.has(p.id)));
+        setPhotoTotalCount(prev => prev - response.deletedCount);
+        showMessage('success', 'Deleted', response.message || `${response.deletedCount} photo(s) deleted`);
+      } else if (activeTab === 'videos' && selectedVideoIds.size > 0) {
+        const ids = Array.from(selectedVideoIds);
+        await Promise.all(ids.map(id => dispatch(deleteVideo(id)).unwrap().catch(() => dispatch(removeJob(id)))));
+        showMessage('success', 'Deleted', `${ids.length} video(s) deleted`);
+      } else if (activeTab === 'comics' && selectedComicIds.size > 0) {
+        const ids = Array.from(selectedComicIds);
+        await Promise.all(ids.map(id => deleteComic(id, accessToken)));
+        setComics(prev => prev.filter(c => !selectedComicIds.has(c.id)));
+        setComicTotalCount(prev => prev - ids.length);
+        showMessage('success', 'Deleted', `${ids.length} comic(s) deleted`);
+      }
+      exitSelectionMode();
+    } catch {
+      showMessage('error', 'Error', 'Failed to delete selected items');
+    } finally {
+      setIsDeletingSelected(false);
+      setClearSelectedDialogVisible(false);
+    }
+  };
+
+  const cancelClearSelected = () => {
+    setClearSelectedDialogVisible(false);
+  };
+
   const handlePhotoRefresh = useCallback(() => {
     fetchPhotos(undefined, true);
   }, [fetchPhotos]);
@@ -619,15 +710,22 @@ const MyCreationsScreen: React.FC = () => {
     // Index within actual photos array for PhotoDetail navigation
     const photoIndex = photos.indexOf(photo);
 
+    const isSelected = isSelectionMode && selectedPhotoIds.has(photo.id);
+
     return (
       <TouchableOpacity
         style={[
           styles.gridItem,
           {backgroundColor: colors.backgroundTertiary},
-          isUnopened && {borderColor: colors.primary, borderWidth: 2},
+          isUnopened && !isSelectionMode && {borderColor: colors.primary, borderWidth: 2},
           isFailed && {borderColor: colors.error, borderWidth: 2},
+          isSelected && {borderColor: colors.primary, borderWidth: 3},
         ]}
         onPress={() => {
+          if (isSelectionMode) {
+            if (!isPending) { togglePhotoSelection(photo.id); }
+            return;
+          }
           if (!isPending && !isFailed) {
             if (isUnopened) {
               handleMarkPhotoOpened(photo.id);
@@ -658,7 +756,7 @@ const MyCreationsScreen: React.FC = () => {
           </View>
         )}
         {/* NEW badge for unopened photos */}
-        {isUnopened && (
+        {isUnopened && !isSelectionMode && (
           <View style={styles.photoNewBadge}>
             <Text style={styles.photoNewBadgeText}>NEW</Text>
           </View>
@@ -670,17 +768,25 @@ const MyCreationsScreen: React.FC = () => {
           <Text style={styles.gridDate}>{formatDate(photo.createdAt)}</Text>
         </View>
         {!isPending && (
-          <TouchableOpacity
-            style={styles.gridDeleteButton}
-            onPress={e => {
-              e.stopPropagation();
-              handlePhotoDelete(photo.id);
-            }}
-            activeOpacity={0.7}>
-            <View style={styles.gridDeleteButtonInner}>
-              <Text style={styles.gridDeleteIcon}>✕</Text>
+          isSelectionMode ? (
+            <View style={styles.gridCheckbox}>
+              <View style={[styles.gridCheckboxInner, isSelected && {backgroundColor: colors.primary, borderColor: colors.primary}]}>
+                {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
             </View>
-          </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.gridDeleteButton}
+              onPress={e => {
+                e.stopPropagation();
+                handlePhotoDelete(photo.id);
+              }}
+              activeOpacity={0.7}>
+              <View style={styles.gridDeleteButtonInner}>
+                <Text style={styles.gridDeleteIcon}>✕</Text>
+              </View>
+            </TouchableOpacity>
+          )
         )}
       </TouchableOpacity>
     );
@@ -759,15 +865,26 @@ const MyCreationsScreen: React.FC = () => {
       ? !item.job.isViewed
       : !item.video.isPlayed && !viewedVideoIds[item.video.videoId]);
 
+    const isVideoSelected = isSelectionMode && selectedVideoIds.has(videoId);
+
     return (
       <TouchableOpacity
         style={[
           styles.videoGridItem,
           {backgroundColor: colors.backgroundTertiary},
-          isNew && {borderColor: colors.primary, borderWidth: 2},
+          isNew && !isSelectionMode && {borderColor: colors.primary, borderWidth: 2},
           isGalleryFailed && {borderColor: colors.error, borderWidth: 2},
+          isVideoSelected && {borderColor: colors.primary, borderWidth: 3},
         ]}
-        onPress={() => !isGalleryFailed && handlePlayVideo(videoUrl, fileName, mimeType, durationSeconds, videoId)}
+        onPress={() => {
+          if (isSelectionMode) {
+            toggleVideoSelection(videoId);
+            return;
+          }
+          if (!isGalleryFailed) {
+            handlePlayVideo(videoUrl, fileName, mimeType, durationSeconds, videoId);
+          }
+        }}
         activeOpacity={isGalleryFailed ? 1 : 0.8}>
         {isGalleryFailed ? (
           <View style={[styles.videoGridThumb, {justifyContent: 'center', alignItems: 'center'}]}>
@@ -797,7 +914,7 @@ const MyCreationsScreen: React.FC = () => {
           </View>
         )}
         {/* Play button overlay */}
-        {!isGalleryFailed && (
+        {!isGalleryFailed && !isSelectionMode && (
           <View style={styles.videoPlayOverlay}>
             <View style={styles.videoPlayButton}>
               <Ionicons name="play" size={24} color="#fff" style={{marginLeft: 2}} />
@@ -805,7 +922,7 @@ const MyCreationsScreen: React.FC = () => {
           </View>
         )}
         {/* NEW badge for unviewed videos */}
-        {isNew && (
+        {isNew && !isSelectionMode && (
           <View style={styles.videoNewBadge}>
             <Text style={styles.videoNewBadgeText}>NEW</Text>
           </View>
@@ -816,18 +933,26 @@ const MyCreationsScreen: React.FC = () => {
             <Text style={styles.videoDurationBadgeText}>{formatDuration(durationSeconds)}</Text>
           </View>
         )}
-        {/* Delete button */}
-        <TouchableOpacity
-          style={styles.videoGridDeleteButton}
-          onPress={e => {
-            e.stopPropagation();
-            handleVideoDelete(videoId);
-          }}
-          activeOpacity={0.7}>
-          <View style={styles.videoGridDeleteInner}>
-            <Text style={styles.videoGridDeleteIcon}>✕</Text>
+        {/* Delete button / Checkbox */}
+        {isSelectionMode ? (
+          <View style={styles.gridCheckbox}>
+            <View style={[styles.gridCheckboxInner, isVideoSelected && {backgroundColor: colors.primary, borderColor: colors.primary}]}>
+              {isVideoSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+            </View>
           </View>
-        </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.videoGridDeleteButton}
+            onPress={e => {
+              e.stopPropagation();
+              handleVideoDelete(videoId);
+            }}
+            activeOpacity={0.7}>
+            <View style={styles.videoGridDeleteInner}>
+              <Text style={styles.videoGridDeleteIcon}>✕</Text>
+            </View>
+          </TouchableOpacity>
+        )}
       </TouchableOpacity>
     );
   };
@@ -882,18 +1007,24 @@ const MyCreationsScreen: React.FC = () => {
     const isFailed = comic.status === 'Failed';
     const isUnviewed = !isPending && !isFailed && !comic.hasBeenViewed;
 
+    const isComicSelected = isSelectionMode && selectedComicIds.has(comic.id);
+
     return (
       <TouchableOpacity
         style={[
           styles.gridItem,
           {backgroundColor: colors.backgroundTertiary},
-          isUnviewed && {borderColor: colors.primary, borderWidth: 2},
+          isUnviewed && !isSelectionMode && {borderColor: colors.primary, borderWidth: 2},
           isFailed && {borderColor: colors.error, borderWidth: 2},
+          isComicSelected && {borderColor: colors.primary, borderWidth: 3},
         ]}
         onPress={() => {
+          if (isSelectionMode) {
+            if (!isPending) { toggleComicSelection(comic.id); }
+            return;
+          }
           if (!isPending && !isFailed) {
             if (isUnviewed) handleMarkComicViewed(comic.id);
-            const comicIndex = comics.indexOf(comic);
             const comicsAsPhotos = comics
               .filter(c => c.status === 'Completed')
               .map(c => ({
@@ -940,13 +1071,13 @@ const MyCreationsScreen: React.FC = () => {
             <Text style={styles.photoFailedBadgeText}>FAILED</Text>
           </View>
         )}
-        {isUnviewed && (
+        {isUnviewed && !isSelectionMode && (
           <View style={styles.photoNewBadge}>
             <Text style={styles.photoNewBadgeText}>NEW</Text>
           </View>
         )}
         {/* Comic badge */}
-        {!isPending && !isFailed && (
+        {!isPending && !isFailed && !isSelectionMode && (
           <View style={styles.comicBadge}>
             <Ionicons name="book" size={10} color="#fff" />
           </View>
@@ -958,17 +1089,25 @@ const MyCreationsScreen: React.FC = () => {
           <Text style={styles.gridDate}>{formatDate(comic.createdAt)}</Text>
         </View>
         {!isPending && (
-          <TouchableOpacity
-            style={styles.gridDeleteButton}
-            onPress={e => {
-              e.stopPropagation();
-              handleComicDelete(comic.id);
-            }}
-            activeOpacity={0.7}>
-            <View style={styles.gridDeleteButtonInner}>
-              <Text style={styles.gridDeleteIcon}>✕</Text>
+          isSelectionMode ? (
+            <View style={styles.gridCheckbox}>
+              <View style={[styles.gridCheckboxInner, isComicSelected && {backgroundColor: colors.primary, borderColor: colors.primary}]}>
+                {isComicSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
             </View>
-          </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.gridDeleteButton}
+              onPress={e => {
+                e.stopPropagation();
+                handleComicDelete(comic.id);
+              }}
+              activeOpacity={0.7}>
+              <View style={styles.gridDeleteButtonInner}>
+                <Text style={styles.gridDeleteIcon}>✕</Text>
+              </View>
+            </TouchableOpacity>
+          )
         )}
       </TouchableOpacity>
     );
@@ -1010,27 +1149,41 @@ const MyCreationsScreen: React.FC = () => {
     }
 
     return (
-      <FlatList
-        key="comics-grid"
-        data={comicListData}
-        renderItem={renderComicItem}
-        keyExtractor={item => item.type === 'activeComic' ? `comic-job-${item.job.comicId}` : item.comic.id}
-        numColumns={3}
-        contentContainerStyle={styles.gridContent}
-        columnWrapperStyle={styles.gridRow}
-        showsVerticalScrollIndicator={false}
-        onEndReached={handleComicLoadMore}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={renderComicFooter}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshingComics}
-            onRefresh={handleComicRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
-        }
-      />
+      <>
+        <FlatList
+          key="comics-grid"
+          data={comicListData}
+          extraData={[isSelectionMode, selectedComicIds]}
+          renderItem={renderComicItem}
+          keyExtractor={item => item.type === 'activeComic' ? `comic-job-${item.job.comicId}` : item.comic.id}
+          numColumns={3}
+          contentContainerStyle={styles.gridContent}
+          columnWrapperStyle={styles.gridRow}
+          showsVerticalScrollIndicator={false}
+          onEndReached={handleComicLoadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderComicFooter}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshingComics}
+              onRefresh={handleComicRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+        />
+
+        {isSelectionMode && selectedComicIds.size > 0 && comics.length > 0 && (
+          <TouchableOpacity
+            style={[styles.clearButton, {borderColor: colors.error}]}
+            onPress={handleClearSelected}
+            disabled={isDeletingSelected}>
+            <Text style={[styles.clearButtonText, {color: colors.error}]}>
+              {isDeletingSelected ? 'Deleting...' : `Clear Selected (${selectedComicIds.size})`}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </>
     );
   };
 
@@ -1081,7 +1234,7 @@ const MyCreationsScreen: React.FC = () => {
         <FlatList
           key="photos-grid"
           data={photoListData}
-          extraData={viewedPhotoIds}
+          extraData={[viewedPhotoIds, isSelectionMode, selectedPhotoIds]}
           renderItem={renderPhotoItem}
           keyExtractor={item => item.type === 'activeImage' ? `img-job-${item.job.photoId}` : item.photo.id}
           numColumns={3}
@@ -1104,10 +1257,14 @@ const MyCreationsScreen: React.FC = () => {
         {photos.length > 0 && (
           <TouchableOpacity
             style={[styles.clearButton, {borderColor: colors.error}]}
-            onPress={handleClearAll}
-            disabled={isDeleting}>
+            onPress={isSelectionMode && selectedPhotoIds.size > 0 ? handleClearSelected : handleClearAll}
+            disabled={isDeleting || isDeletingSelected}>
             <Text style={[styles.clearButtonText, {color: colors.error}]}>
-              {isDeleting ? 'Deleting...' : 'Clear All History'}
+              {isDeleting || isDeletingSelected
+                ? 'Deleting...'
+                : isSelectionMode && selectedPhotoIds.size > 0
+                  ? `Clear Selected (${selectedPhotoIds.size})`
+                  : 'Clear All History'}
             </Text>
           </TouchableOpacity>
         )}
@@ -1131,7 +1288,7 @@ const MyCreationsScreen: React.FC = () => {
         <FlatList
           key="videos-grid"
           data={videoListData}
-          extraData={viewedVideoIds}
+          extraData={[viewedVideoIds, isSelectionMode, selectedVideoIds]}
           renderItem={renderVideoItem}
           keyExtractor={videoKeyExtractor}
           numColumns={3}
@@ -1155,10 +1312,14 @@ const MyCreationsScreen: React.FC = () => {
         {videoListData.length > 0 && (
           <TouchableOpacity
             style={[styles.clearButton, {borderColor: colors.error}]}
-            onPress={handleClearVideoHistory}
-            disabled={isDeletingAllVideos}>
+            onPress={isSelectionMode && selectedVideoIds.size > 0 ? handleClearSelected : handleClearVideoHistory}
+            disabled={isDeletingAllVideos || isDeletingSelected}>
             <Text style={[styles.clearButtonText, {color: colors.error}]}>
-              {isDeletingAllVideos ? 'Deleting...' : 'Clear Video History'}
+              {isDeletingAllVideos || isDeletingSelected
+                ? 'Deleting...'
+                : isSelectionMode && selectedVideoIds.size > 0
+                  ? `Clear Selected (${selectedVideoIds.size})`
+                  : 'Clear Video History'}
             </Text>
           </TouchableOpacity>
         )}
@@ -1177,7 +1338,24 @@ const MyCreationsScreen: React.FC = () => {
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, {color: colors.textPrimary}]}>My Creations</Text>
-        <View style={styles.headerRight} />
+        <View style={styles.headerRight}>
+          {isSelectionMode ? (
+            <View style={styles.selectionHeaderButtons}>
+              {currentSelectionCount > 0 && (
+                <TouchableOpacity onPress={deselectAll} activeOpacity={0.7}>
+                  <Text style={[styles.headerLinkText, {color: colors.textSecondary}]}>Deselect All</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={exitSelectionMode} activeOpacity={0.7}>
+                <Text style={[styles.headerLinkText, {color: colors.primary}]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity onPress={() => setIsSelectionMode(true)} activeOpacity={0.7}>
+              <Text style={[styles.headerLinkText, {color: colors.primary}]}>Select</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Tab Bar */}
@@ -1304,6 +1482,20 @@ const MyCreationsScreen: React.FC = () => {
         onClose={cancelClearVideoHistory}
       />
 
+      {/* Clear Selected Confirmation Dialog */}
+      <CustomDialog
+        visible={clearSelectedDialogVisible}
+        icon="warning-outline"
+        iconColor={colors.error}
+        title="Clear Selected"
+        message={`Are you sure you want to delete ${currentSelectionCount} selected item(s)? This action cannot be undone.`}
+        buttons={[
+          {text: isDeletingSelected ? 'Deleting...' : 'Clear Selected', onPress: confirmClearSelected, style: 'cancel'},
+          {text: 'Cancel', onPress: cancelClearSelected, style: 'default'},
+        ]}
+        onClose={cancelClearSelected}
+      />
+
       {/* Message Dialog */}
       <CustomDialog
         visible={messageDialog.visible}
@@ -1382,7 +1574,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   headerRight: {
-    width: 40,
+    minWidth: 40,
+    alignItems: 'flex-end',
+  },
+  selectionHeaderButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  headerLinkText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   tabBar: {
     flexDirection: 'row',
@@ -1463,6 +1665,24 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '700',
+  },
+  gridCheckbox: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 24,
+    height: 24,
+    zIndex: 10,
+  },
+  gridCheckboxInner: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   gridImage: {
     width: '100%',

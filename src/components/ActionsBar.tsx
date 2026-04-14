@@ -314,6 +314,8 @@ const ActionsBar = forwardRef<ActionsBarRef, ActionsBarProps>(({
       onPress={() => {
         if (isExpanded) {
           collapseIcons();
+        } else {
+          expandIcons();
         }
       }}>
       {/* Stacked/Expandable Action Icons */}
@@ -351,7 +353,6 @@ const ActionsBar = forwardRef<ActionsBarRef, ActionsBarProps>(({
                     triggerHaptic();
                     if (isExpanded) {
                       toggleActionSelection(item);
-                      collapseIcons();
                     } else {
                       toggleExpand();
                     }

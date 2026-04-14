@@ -8,6 +8,7 @@ import {
   Image,
   ActivityIndicator,
   TouchableWithoutFeedback,
+  Modal,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -18,6 +19,7 @@ import {logoutUser, fetchUserInfo} from '../store/slices/authSlice';
 import EditProfileModal from '../components/EditProfileModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import PaywallScreen from './PaywallScreen';
+import {config} from '../utils/config';
 
 interface ProfileOptionProps {
   icon: string;
@@ -87,6 +89,9 @@ const ProfileScreen: React.FC = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
+  const [legalModal, setLegalModal] = useState<{visible: boolean; title: string; content: string; isLoading: boolean}>({
+    visible: false, title: '', content: '', isLoading: false,
+  });
 
   // State for custom dialogs
   const [infoDialog, setInfoDialog] = useState<{
@@ -198,6 +203,45 @@ const ProfileScreen: React.FC = () => {
         showInfo('Coming Soon', 'Account deletion will be available soon.', 'time-outline');
       },
       true,
+    );
+  };
+
+  const openLegalContent = async (type: 'terms' | 'privacy') => {
+    const title = type === 'terms' ? 'Terms & Conditions' : 'Privacy Policy';
+    const endpoint = type === 'terms' ? 'terms_and_conditions' : 'privacy_policy';
+    setLegalModal({visible: true, title, content: '', isLoading: true});
+    try {
+      const response = await fetch(`${config.apiBaseUrl}/api/SystemSettings/${endpoint}`);
+      const json = await response.json();
+      setLegalModal(prev => ({...prev, content: json.value || json.content || '', isLoading: false}));
+    } catch {
+      setLegalModal(prev => ({...prev, content: 'Failed to load content. Please try again.', isLoading: false}));
+    }
+  };
+
+  const renderMarkdownLine = (line: string, index: number) => {
+    const trimmed = line.trim();
+    if (!trimmed) return <View key={index} style={{height: 10}} />;
+    if (trimmed.startsWith('### ')) return <Text key={index} style={styles.mdH3}>{trimmed.slice(4).replace(/\*\*/g, '')}</Text>;
+    if (trimmed.startsWith('## ')) return <Text key={index} style={styles.mdH2}>{trimmed.slice(3).replace(/\*\*/g, '')}</Text>;
+    if (trimmed.startsWith('# ')) return <Text key={index} style={styles.mdH1}>{trimmed.slice(2).replace(/\*\*/g, '')}</Text>;
+    if (/^[-*_]{3,}$/.test(trimmed)) return <View key={index} style={styles.mdHr} />;
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      const parts = trimmed.slice(2).split(/(\*\*[^*]+\*\*)/g);
+      return (
+        <View key={index} style={styles.mdBulletRow}>
+          <Text style={styles.mdBulletDot}>{'\u2022'}</Text>
+          <Text style={styles.mdBody}>
+            {parts.map((p, i) => p.startsWith('**') && p.endsWith('**') ? <Text key={i} style={styles.mdBold}>{p.slice(2, -2)}</Text> : p)}
+          </Text>
+        </View>
+      );
+    }
+    const parts = trimmed.split(/(\*\*[^*]+\*\*)/g);
+    return (
+      <Text key={index} style={styles.mdBody}>
+        {parts.map((p, i) => p.startsWith('**') && p.endsWith('**') ? <Text key={i} style={styles.mdBold}>{p.slice(2, -2)}</Text> : p)}
+      </Text>
     );
   };
 
@@ -332,19 +376,14 @@ const ProfileScreen: React.FC = () => {
           <Text style={[styles.sectionTitle, {color: colors.textSecondary}]}>PRIVACY</Text>
           <View style={styles.optionsGroup}>
             <ProfileOption
-              icon="shield-outline"
-              label="Privacy Settings"
-              onPress={handlePrivacySettings}
-            />
-            <ProfileOption
               icon="document-text-outline"
               label="Terms of Service"
-              onPress={() => showInfo('Coming Soon', 'Terms of Service will be available soon!', 'time-outline')}
+              onPress={() => openLegalContent('terms')}
             />
             <ProfileOption
               icon="information-circle-outline"
               label="Privacy Policy"
-              onPress={() => showInfo('Coming Soon', 'Privacy Policy will be available soon!', 'time-outline')}
+              onPress={() => openLegalContent('privacy')}
             />
           </View>
         </View>
@@ -470,6 +509,42 @@ const ProfileScreen: React.FC = () => {
           />
         </View>
       )}
+
+      {/* Legal Content Modal */}
+      <Modal
+        visible={legalModal.visible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLegalModal(prev => ({...prev, visible: false}))}>
+        <View style={styles.legalOverlay}>
+          <View style={styles.legalContainer}>
+            <View style={styles.legalHeader}>
+              <Text style={styles.legalTitle}>{legalModal.title}</Text>
+              <TouchableOpacity
+                onPress={() => setLegalModal(prev => ({...prev, visible: false}))}
+                style={styles.legalClose}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            {legalModal.isLoading ? (
+              <View style={styles.legalLoading}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : (
+              <ScrollView style={styles.legalScroll} showsVerticalScrollIndicator>
+                {legalModal.content.split('\n').map((line, i) => renderMarkdownLine(line, i))}
+                <View style={{height: 20}} />
+              </ScrollView>
+            )}
+            <TouchableOpacity
+              style={[styles.legalButton, {backgroundColor: colors.primary}]}
+              onPress={() => setLegalModal(prev => ({...prev, visible: false}))}
+              activeOpacity={0.8}>
+              <Text style={styles.legalButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -755,6 +830,108 @@ const styles = StyleSheet.create({
   paywallOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 2000,
+  },
+  legalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  legalContainer: {
+    backgroundColor: '#1a1a2e',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '85%',
+    paddingBottom: 34,
+  },
+  legalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  legalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  legalClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  legalLoading: {
+    paddingVertical: 60,
+    alignItems: 'center',
+  },
+  legalScroll: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  legalButton: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  legalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  mdH1: {
+    fontSize: 22,
+    fontWeight: '800' as const,
+    color: '#fff',
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  mdH2: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: '#fff',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  mdH3: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: 'rgba(255,255,255,0.95)',
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  mdBody: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: 'rgba(255,255,255,0.75)',
+    marginBottom: 4,
+  },
+  mdBold: {
+    fontWeight: '700' as const,
+    color: 'rgba(255,255,255,0.9)',
+  },
+  mdBulletRow: {
+    flexDirection: 'row' as const,
+    paddingLeft: 4,
+    marginBottom: 4,
+  },
+  mdBulletDot: {
+    fontSize: 14,
+    color: '#FF1B6D',
+    marginRight: 8,
+    marginTop: 1,
+  },
+  mdHr: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginVertical: 16,
   },
 });
 

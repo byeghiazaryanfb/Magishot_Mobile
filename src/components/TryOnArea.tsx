@@ -36,6 +36,8 @@ import {useServicePrices} from '../hooks/useServicePrices';
 import FullScreenImageModal from './FullScreenImageModal';
 import {ProductItem} from '../services/productsApi';
 import {useTryOnPrompts} from '../hooks/useTryOnPrompts';
+import AiConsentDialog from './AiConsentDialog';
+import {useAiConsent} from '../hooks/useAiConsent';
 
 const TryOnArea: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -48,6 +50,7 @@ const TryOnArea: React.FC = () => {
   const selectedProduct = useAppSelector(state => state.tryOn.selectedProduct);
   const accessToken = useAppSelector(state => state.auth.accessToken);
   const {tryOnPrice} = useServicePrices();
+  const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
@@ -112,6 +115,7 @@ const TryOnArea: React.FC = () => {
 
   // Handle try on generation (fire-and-forget → SignalR delivers result)
   const handleTryOn = async () => {
+    if (!(await requireConsent())) return;
     if (!personImage || (!productImage && !productImageUrl)) {
       return;
     }
@@ -540,6 +544,7 @@ const TryOnArea: React.FC = () => {
         onClose={() => setSuccessDialog(prev => ({...prev, visible: false}))}
         autoDismissMs={2500}
       />
+      <AiConsentDialog visible={consentVisible} onAccept={onConsentAccept} onDecline={onConsentDecline} />
     </ScrollView>
   );
 };

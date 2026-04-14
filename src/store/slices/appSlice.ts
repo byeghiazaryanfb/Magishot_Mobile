@@ -24,6 +24,7 @@ interface AppState {
   unviewedComicsCount: number;
   viewedPhotoIds: Record<string, boolean>;
   businessMode: boolean;
+  accountDeleted: boolean;
 }
 
 const initialState: AppState = {
@@ -37,6 +38,7 @@ const initialState: AppState = {
   unviewedComicsCount: 0,
   viewedPhotoIds: {},
   businessMode: false,
+  accountDeleted: false,
 };
 
 export const fetchUnreadCounts = createAsyncThunk(
@@ -78,6 +80,9 @@ const appSlice = createSlice({
     toggleBusinessMode: state => {
       state.businessMode = !state.businessMode;
     },
+    setAccountDeleted: (state, action: PayloadAction<boolean>) => {
+      state.accountDeleted = action.payload;
+    },
   },
   extraReducers: builder => {
     builder.addCase(fetchUnreadCounts.fulfilled, (state, action) => {
@@ -97,6 +102,7 @@ export const {
   setNetworkStatus,
   markPhotoViewed,
   toggleBusinessMode,
+  setAccountDeleted,
 } = appSlice.actions;
 
 export default appSlice.reducer;

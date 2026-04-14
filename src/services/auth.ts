@@ -77,6 +77,13 @@ class AuthService {
   }
 
   /**
+   * Delete user account and all associated data permanently
+   */
+  async deleteAccount(accessToken: string): Promise<{message: string}> {
+    return api.delete<{message: string}>('/api/Auth/account', accessToken);
+  }
+
+  /**
    * Get current user info
    */
   async getMe(accessToken: string): Promise<UserInfo> {

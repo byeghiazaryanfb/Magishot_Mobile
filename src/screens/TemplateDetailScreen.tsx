@@ -20,12 +20,14 @@ import GradientButton from '../components/GradientButton';
 import PhotoPickerModal from '../components/PhotoPickerModal';
 import FullScreenImageModal from '../components/FullScreenImageModal';
 import CustomDialog from '../components/CustomDialog';
+import AiConsentDialog from '../components/AiConsentDialog';
 import {ImageAsset} from '../services/imageTransform';
 import {config} from '../utils/config';
 import {RootStackParamList} from '../navigation/RootNavigator';
 import {useAppDispatch, useAppSelector} from '../store/hooks';
 import {addPendingJob} from '../store/slices/videoNotificationSlice';
 import {fetchCoinBalance} from '../store/slices/authSlice';
+import {useAiConsent} from '../hooks/useAiConsent';
 
 type TemplateDetailRouteProp = RouteProp<RootStackParamList, 'TemplateDetail'>;
 
@@ -70,6 +72,7 @@ const TemplateDetailScreen: React.FC = () => {
   const {template} = route.params;
   const dispatch = useAppDispatch();
   const accessToken = useAppSelector(state => state.auth.accessToken);
+  const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
 
   const photoCount = template.requiredPhotoCount || template.maxImages;
   const minRequired = template.requiredPhotoCount || template.minImages;
@@ -142,6 +145,7 @@ const TemplateDetailScreen: React.FC = () => {
   };
 
   const handleGenerate = async () => {
+    if (!(await requireConsent())) return;
     if (!canGenerate) {
       Alert.alert(
         'More Photos Needed',
@@ -468,6 +472,7 @@ const TemplateDetailScreen: React.FC = () => {
         ]}
         onClose={hideDialog}
       />
+      <AiConsentDialog visible={consentVisible} onAccept={onConsentAccept} onDecline={onConsentDecline} />
     </View>
   );
 };

@@ -64,6 +64,8 @@ import filtersApi, {ApiFilter, FilterCategory, getFullThumbnailUrl} from '../ser
 import {generateCaption} from '../services/captionApi';
 import PriceBadge from '../components/PriceBadge';
 import {useServicePrices} from '../hooks/useServicePrices';
+import AiConsentDialog from '../components/AiConsentDialog';
+import {useAiConsent} from '../hooks/useAiConsent';
 
 // Type for recent filter entry
 interface RecentFilter {
@@ -156,6 +158,7 @@ const EditScreen: React.FC = () => {
   const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount;
   const notificationUnreadCount = useSelector((state: RootState) => state.notification.unreadCount);
   const {captionPrice} = useServicePrices();
+  const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
 
   // Walkthrough for Edit tab
   const {start, copilotEvents, currentStep} = useCopilot();
@@ -2814,6 +2817,7 @@ const EditScreen: React.FC = () => {
   // Render adjustment panel
   // Caption handlers
   const handleGenerateCaption = async () => {
+    if (!(await requireConsent())) return;
     if (!selectedImage) return;
 
     // Fresh balance check from server
@@ -3472,6 +3476,7 @@ const EditScreen: React.FC = () => {
         buttons={[{text: 'OK', onPress: hideMessage}]}
         onClose={hideMessage}
       />
+      <AiConsentDialog visible={consentVisible} onAccept={onConsentAccept} onDecline={onConsentDecline} />
     </View>
   );
 };
@@ -3500,6 +3505,8 @@ const styles = StyleSheet.create({
   menuButton: {
     justifyContent: 'center',
     alignItems: 'center',
+    width: 44,
+    height: 44,
   },
   headerRight: {
     flexDirection: 'row' as const,

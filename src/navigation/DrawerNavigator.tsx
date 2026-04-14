@@ -20,8 +20,8 @@ import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useTheme} from '../theme/ThemeContext';
 import {useAppDispatch, useAppSelector} from '../store/hooks';
-import {logoutUser, fetchCoinBalance} from '../store/slices/authSlice';
-import {fetchUnreadCounts} from '../store/slices/appSlice';
+import {logoutUser, deleteAccount, fetchCoinBalance} from '../store/slices/authSlice';
+import {fetchUnreadCounts, setAccountDeleted} from '../store/slices/appSlice';
 import TabNavigator from './TabNavigator';
 import Logo from '../components/Logo';
 import {config} from '../utils/config';
@@ -99,6 +99,8 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
   const [errorMessage, setErrorMessage] = useState('');
   const [showRateApp, setShowRateApp] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [showComingSoon, setShowComingSoon] = useState(false);
   const [comingSoonFeature, setComingSoonFeature] = useState('');
   const [showOnboardingPreview, setShowOnboardingPreview] = useState(false);
@@ -106,7 +108,7 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
   const [legalModal, setLegalModal] = useState<{visible: boolean; title: string; content: string; isLoading: boolean}>({
     visible: false, title: '', content: '', isLoading: false,
   });
-  const {username, refreshToken, accessToken, coinBalance} = useAppSelector(state => state.auth);
+  const {username, email, refreshToken, accessToken, coinBalance} = useAppSelector(state => state.auth);
   const {unopenedPhotosCount, unplayedVideosCount} = useAppSelector(state => state.app);
   const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount;
 
@@ -166,6 +168,26 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
   const confirmLogout = () => {
     setShowLogoutConfirm(false);
     dispatch(logoutUser(refreshToken || undefined));
+  };
+
+  const handleDeleteAccount = () => {
+    setShowDeleteAccountConfirm(true);
+  };
+
+  const confirmDeleteAccount = async () => {
+    if (!accessToken) return;
+    setIsDeletingAccount(true);
+    try {
+      await dispatch(deleteAccount({accessToken, email: email || ''})).unwrap();
+      setShowDeleteAccountConfirm(false);
+      dispatch(setAccountDeleted(true));
+    } catch {
+      setShowDeleteAccountConfirm(false);
+      setErrorMessage('Failed to delete account. Please try again.');
+      setShowErrorDialog(true);
+    } finally {
+      setIsDeletingAccount(false);
+    }
   };
 
   const handleMenuPress = (screen: string) => {
@@ -355,33 +377,18 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
           />
         </View>
 
-        {/* Developer / Preview Section - TEMPORARY */}
-        <View style={styles.menuSection}>
-          <Text style={styles.sectionTitle}>PREVIEW (TEMP)</Text>
-          <MenuItem
-            icon="play-circle-outline"
-            label="Welcome Screen"
-            onPress={() => {
-              props.navigation.closeDrawer();
-              setShowWelcomePreview(true);
-            }}
-          />
-          <MenuItem
-            icon="albums-outline"
-            label="Onboarding Flow"
-            onPress={() => {
-              props.navigation.closeDrawer();
-              setShowOnboardingPreview(true);
-            }}
-          />
-        </View>
-
-        {/* Logout */}
+{/* Logout & Account */}
         <View style={styles.logoutSection}>
           <MenuItem
             icon="log-out-outline"
             label="Logout"
             onPress={handleLogout}
+            isDestructive
+          />
+          <MenuItem
+            icon="trash-outline"
+            label="Delete Account"
+            onPress={handleDeleteAccount}
             isDestructive
           />
         </View>
@@ -441,6 +448,18 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
           {text: 'Logout', onPress: confirmLogout, style: 'destructive'},
         ]}
         onClose={() => setShowLogoutConfirm(false)}
+      />
+      <CustomDialog
+        visible={showDeleteAccountConfirm}
+        icon="warning-outline"
+        iconColor="#FF4757"
+        title="Delete Account"
+        message="This will permanently delete your account and all your data including photos, videos, comics, and coins. This action cannot be undone."
+        buttons={[
+          {text: 'Cancel', onPress: () => setShowDeleteAccountConfirm(false), style: 'cancel'},
+          {text: isDeletingAccount ? 'Deleting...' : 'Delete Forever', onPress: confirmDeleteAccount, style: 'destructive'},
+        ]}
+        onClose={() => setShowDeleteAccountConfirm(false)}
       />
       <CustomDialog
         visible={showComingSoon}

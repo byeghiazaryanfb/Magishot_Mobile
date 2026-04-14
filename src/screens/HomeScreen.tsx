@@ -163,6 +163,8 @@ const styles = StyleSheet.create({
   menuButton: {
     justifyContent: 'center',
     alignItems: 'center',
+    width: 44,
+    height: 44,
   },
   headerRight: {
     flexDirection: 'row',

@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {AuthResponse} from '../types';
 
 const STORAGE_KEYS = {
+  HAS_SEEN_WELCOME: '@picgen:hasSeenWelcome',
   HAS_SEEN_ONBOARDING: '@picgen:hasSeenOnboarding',
   TRANSFORMATION_HISTORY: '@picgen:transformationHistory',
   AUTH_DATA: '@picgen:authData',
@@ -12,6 +13,7 @@ const STORAGE_KEYS = {
   CACHED_PHOTOS: '@picgen:cachedPhotos',
   CACHED_VIDEOS: '@picgen:cachedVideos',
   SCENARIO_PANEL_EXPANDED: '@picgen:scenarioPanelExpanded',
+  AI_PROCESSING_CONSENT: '@picgen:aiProcessingConsent',
 };
 
 export interface HistoryItem {
@@ -102,38 +104,110 @@ export const HistoryStorage = {
   },
 };
 
-export const OnboardingStorage = {
-  /**
-   * Check if user has completed onboarding
-   */
-  async hasSeenOnboarding(): Promise<boolean> {
+export const WelcomeStorage = {
+  async hasSeenWelcome(): Promise<boolean> {
     try {
-      const value = await AsyncStorage.getItem(STORAGE_KEYS.HAS_SEEN_ONBOARDING);
+      const value = await AsyncStorage.getItem(STORAGE_KEYS.HAS_SEEN_WELCOME);
       return value === 'true';
     } catch {
       return false;
     }
   },
 
-  /**
-   * Mark onboarding as complete
-   */
-  async setOnboardingComplete(): Promise<void> {
+  async setWelcomeSeen(): Promise<void> {
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.HAS_SEEN_ONBOARDING, 'true');
+      await AsyncStorage.setItem(STORAGE_KEYS.HAS_SEEN_WELCOME, 'true');
+    } catch (error) {
+      console.error('Failed to save welcome status:', error);
+    }
+  },
+};
+
+export const OnboardingStorage = {
+  /**
+   * Get the storage key for a specific email (or the legacy global key)
+   */
+  _key(email?: string): string {
+    return email
+      ? `${STORAGE_KEYS.HAS_SEEN_ONBOARDING}:${email.toLowerCase()}`
+      : STORAGE_KEYS.HAS_SEEN_ONBOARDING;
+  },
+
+  /**
+   * Check if user has completed onboarding
+   * Falls back to global key if email-specific key isn't set
+   */
+  async hasSeenOnboarding(email?: string): Promise<boolean> {
+    try {
+      const value = await AsyncStorage.getItem(this._key(email));
+      if (value === 'true') return true;
+      // If checking with email, also check the global key as fallback
+      if (email) {
+        const globalValue = await AsyncStorage.getItem(this._key());
+        if (globalValue === 'true') {
+          // Migrate: save to email-specific key so this fallback isn't needed again
+          await AsyncStorage.setItem(this._key(email), 'true');
+          return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Mark onboarding as complete for a specific user
+   */
+  async setOnboardingComplete(email?: string): Promise<void> {
+    try {
+      await AsyncStorage.setItem(this._key(email), 'true');
     } catch (error) {
       console.error('Failed to save onboarding status:', error);
     }
   },
 
   /**
-   * Reset onboarding (for development/testing)
+   * Reset onboarding for a specific user (used on account deletion)
    */
-  async resetOnboarding(): Promise<void> {
+  async resetOnboarding(email?: string): Promise<void> {
     try {
-      await AsyncStorage.removeItem(STORAGE_KEYS.HAS_SEEN_ONBOARDING);
+      await AsyncStorage.removeItem(this._key(email));
     } catch (error) {
       console.error('Failed to reset onboarding:', error);
+    }
+  },
+};
+
+export const AiConsentStorage = {
+  _key(email?: string): string {
+    return email
+      ? `${STORAGE_KEYS.AI_PROCESSING_CONSENT}:${email.toLowerCase()}`
+      : STORAGE_KEYS.AI_PROCESSING_CONSENT;
+  },
+
+  async hasConsented(email?: string): Promise<boolean> {
+    try {
+      const value = await AsyncStorage.getItem(this._key(email));
+      return value === 'true';
+    } catch {
+      return false;
+    }
+  },
+
+  async setConsented(email?: string): Promise<void> {
+    try {
+      await AsyncStorage.setItem(this._key(email), 'true');
+    } catch (error) {
+      console.error('Failed to save AI consent:', error);
+    }
+  },
+
+  async resetConsent(email?: string): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(this._key(email));
+    } catch (error) {
+      console.error('Failed to reset AI consent:', error);
     }
   },
 };

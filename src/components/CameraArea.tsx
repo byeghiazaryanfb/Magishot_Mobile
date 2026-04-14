@@ -54,7 +54,9 @@ import {toggleBusinessMode} from '../store/slices/appSlice';
 import {SvgXml} from 'react-native-svg';
 import MaskDrawingCanvas, {MaskDrawingCanvasRef} from './MaskDrawingCanvas';
 import AnimateResultModal from './AnimateResultModal';
+import AiConsentDialog from './AiConsentDialog';
 import SightsBar from './SightsBar';
+import {useAiConsent} from '../hooks/useAiConsent';
 
 interface RemovalShortcut {
   id: string;
@@ -82,6 +84,7 @@ const CameraArea: React.FC = () => {
   const styleMode = useAppSelector(state => state.transform.styleMode);
   const accessToken = useAppSelector(state => state.auth.accessToken);
   const {openEyesPrice, extendPrice, restorePrice, animationPrice, refinePrice} = useServicePrices();
+  const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
 
   // Calculate accumulated coin cost from selected template + accessories (Effects mode)
   const totalCoins = (() => {
@@ -448,6 +451,7 @@ const CameraArea: React.FC = () => {
 
   // Handle generate button press - actually starts the transformation
   const handleGenerate = async () => {
+    if (!(await requireConsent())) return;
     if (!effectsPhoto) {
       // If no photo, open photo picker
       showImagePickerOptions();
@@ -705,6 +709,7 @@ const CameraArea: React.FC = () => {
 
   // Handle Synthesize Generate button
   const handleSynthesizeGenerate = async () => {
+    if (!(await requireConsent())) return;
     if (!referencePhotos[0] && !synthesizePhoto2) {
       setSynthesizeModalMessage('Please add both photos to create your synthesized image.');
       setShowSynthesizeModal(true);
@@ -807,6 +812,7 @@ const CameraArea: React.FC = () => {
 
   // Handle Open Eyes Generate button
   const handleOpenEyesGenerate = async () => {
+    if (!(await requireConsent())) return;
     if (!openEyesPhoto) {
       // No photo selected, open image picker
       setPhotoPickerSlot('effects');
@@ -884,6 +890,7 @@ const CameraArea: React.FC = () => {
 
   // Handle Restore Generate button
   const handleRestoreGenerate = async () => {
+    if (!(await requireConsent())) return;
     if (!restorePhoto) {
       // No photo selected, open image picker
       setPhotoPickerSlot('effects');
@@ -961,6 +968,7 @@ const CameraArea: React.FC = () => {
 
   // Handle Refine Generate button
   const handleRefineGenerate = async () => {
+    if (!(await requireConsent())) return;
     if (!refinePhoto) {
       setPhotoPickerSlot('effects');
       setShowPhotoPicker(true);
@@ -1037,6 +1045,7 @@ const CameraArea: React.FC = () => {
 
   // Handle Animate Generate button
   const handleAnimateGenerate = async () => {
+    if (!(await requireConsent())) return;
     if (!animatePhoto) {
       setPhotoPickerSlot('effects');
       setShowPhotoPicker(true);
@@ -1858,6 +1867,7 @@ const CameraArea: React.FC = () => {
 
   // Handle Clean Background Generate button (sends image only, no mask)
   const handleCleanBgGenerate = async () => {
+    if (!(await requireConsent())) return;
     if (!cleanBgPhoto) {
       setPhotoPickerSlot('effects');
       setShowPhotoPicker(true);
@@ -1934,6 +1944,7 @@ const CameraArea: React.FC = () => {
 
   // Handle mask-based Remove Object (captures photo+highlights composite, sends to remove-object)
   const handleMaskCleanGenerate = async () => {
+    if (!(await requireConsent())) return;
     if (!cleanBgPhoto) {
       return;
     }
@@ -2778,6 +2789,7 @@ const CameraArea: React.FC = () => {
           <ActivityIndicator size="large" color="#fff" />
         </View>
       )}
+      <AiConsentDialog visible={consentVisible} onAccept={onConsentAccept} onDecline={onConsentDecline} />
     </View>
   );
 };

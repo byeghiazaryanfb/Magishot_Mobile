@@ -4,7 +4,7 @@
 
 import {createSlice, PayloadAction, createAsyncThunk} from '@reduxjs/toolkit';
 import authService, {UserInfo} from '../../services/auth';
-import {AuthStorage, ViewedVideoStorage} from '../../utils/storage';
+import {AuthStorage, ViewedVideoStorage, GalleryCache, OnboardingStorage, AiConsentStorage} from '../../utils/storage';
 import {fetchBalance} from '../../services/coinBalanceApi';
 import type {
   LoginRequest,
@@ -170,6 +170,29 @@ export const logoutUser = createAsyncThunk<
     // Still clear storage even if logout API fails
     await AuthStorage.clearAuthData();
     await ViewedVideoStorage.clear();
+    return rejectWithValue(getErrorMessage(error));
+  }
+});
+
+/**
+ * Async thunk for deleting user account
+ */
+export const deleteAccount = createAsyncThunk<
+  {message: string},
+  {accessToken: string; email: string},
+  {rejectValue: string}
+>('auth/deleteAccount', async ({accessToken, email}, {rejectWithValue}) => {
+  try {
+    const response = await authService.deleteAccount(accessToken);
+    // Clear all local storage
+    await AuthStorage.clearAuthData();
+    await ViewedVideoStorage.clear();
+    await GalleryCache.clearPhotos();
+    await GalleryCache.clearVideos();
+    await OnboardingStorage.resetOnboarding(email);
+    await AiConsentStorage.resetConsent(email);
+    return response;
+  } catch (error) {
     return rejectWithValue(getErrorMessage(error));
   }
 });
@@ -430,6 +453,31 @@ const authSlice = createSlice({
         state.expiresIn = null;
         state.coinBalance = null;
         state.isAuthenticated = false;
+      });
+
+    // Delete account reducers
+    builder
+      .addCase(deleteAccount.pending, state => {
+        state.isLoading = true;
+      })
+      .addCase(deleteAccount.fulfilled, state => {
+        state.isLoading = false;
+        state.userId = null;
+        state.username = null;
+        state.email = null;
+        state.firstName = null;
+        state.lastName = null;
+        state.profilePictureUrl = null;
+        state.accessToken = null;
+        state.refreshToken = null;
+        state.expiresIn = null;
+        state.coinBalance = null;
+        state.isAuthenticated = false;
+        state.error = null;
+      })
+      .addCase(deleteAccount.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload || 'Account deletion failed';
       });
 
     // Fetch user info reducers

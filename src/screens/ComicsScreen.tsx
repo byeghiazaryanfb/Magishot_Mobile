@@ -38,6 +38,8 @@ import {addPendingComicJob} from '../store/slices/comicNotificationSlice';
 import {fetchCoinBalance} from '../store/slices/authSlice';
 import {useServicePrices} from '../hooks/useServicePrices';
 import {requestPhotoLibraryPermission} from '../utils/permissions';
+import AiConsentDialog from '../components/AiConsentDialog';
+import {useAiConsent} from '../hooks/useAiConsent';
 
 const MAX_PHOTOS = 7;
 const HEADER_HEIGHT = 56;
@@ -60,6 +62,7 @@ const ComicsScreen: React.FC = () => {
   const accessToken = useSelector((state: RootState) => state.auth.accessToken);
   const dispatch = useAppDispatch();
   const {comicPrice} = useServicePrices();
+  const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
   const incomingComicId = route.params?.comicId;
 
   const [imageSlots, setImageSlots] = useState<ImageSlot[]>(
@@ -221,6 +224,7 @@ const ComicsScreen: React.FC = () => {
   };
 
   const handleGenerate = async () => {
+    if (!(await requireConsent())) return;
     if (!canGenerate || !accessToken) return;
 
     setIsGenerating(true);
@@ -824,6 +828,7 @@ const ComicsScreen: React.FC = () => {
         onClose={() => setDialog(prev => ({...prev, visible: false}))}
         autoDismissMs={dialog.type === 'success' ? 2500 : undefined}
       />
+      <AiConsentDialog visible={consentVisible} onAccept={onConsentAccept} onDecline={onConsentDecline} />
     </KeyboardAvoidingView>
   );
 };

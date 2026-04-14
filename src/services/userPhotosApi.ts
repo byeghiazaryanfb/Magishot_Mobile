@@ -100,9 +100,32 @@ export const deleteAllUserPhotos = async (accessToken: string): Promise<DeleteAl
   }
 };
 
+/**
+ * Delete multiple photos by their IDs
+ * @param accessToken - The user's access token for authentication
+ * @param ids - Array of photo IDs to delete
+ */
+export const deleteBatchUserPhotos = async (
+  accessToken: string,
+  ids: string[]
+): Promise<DeleteAllPhotosResponse> => {
+  try {
+    const response = await api.post<DeleteAllPhotosResponse>(
+      '/api/UserPhotos/delete-batch',
+      { ids },
+      accessToken
+    );
+    return response;
+  } catch (error) {
+    console.error('Error batch deleting user photos:', error);
+    throw error;
+  }
+};
+
 export default {
   getUserPhotos,
   deleteUserPhoto,
   markPhotoOpened,
   deleteAllUserPhotos,
+  deleteBatchUserPhotos,
 };
