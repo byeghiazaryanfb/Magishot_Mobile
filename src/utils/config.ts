@@ -6,14 +6,16 @@
 export const config = {
   // API base URL - update this to match your backend URL
   apiBaseUrl: __DEV__
-  ? 'http://192.168.10.30:5001' // Office
-   // ? 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net' // Home
+  //? 'http://192.168.10.30:5001' // Office
+  //? 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net' // Home
+    ? 'http://172.20.10.4:5001' // en0
     : 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net', // Production
 
   // Gemini API base URL for image transformation
   geminiApiBaseUrl: __DEV__
-  ? 'http://192.168.10.30:5001' // Office
-  // ? 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net' // Home
+  //? 'http://192.168.10.30:5001' // Office
+  //? 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net' // Home
+    ? 'http://172.20.10.4:5001' // en0
     : 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net', // Production
 
   // API timeout in milliseconds
@@ -27,6 +29,11 @@ export const config = {
 
   // Support email
   supportEmail: 'info@softsfab.com',
+
+  // Public legal URLs — used as a browser fallback when the in-app
+  // legal-content fetch fails or is slow (App Review reliability).
+  termsUrl: 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/',
+  privacyUrl: 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net/privacy',
 };
 
 export default config;
