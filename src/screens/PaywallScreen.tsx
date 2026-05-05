@@ -8,82 +8,329 @@ import {
   ScrollView,
   SafeAreaView,
   Dimensions,
+  ActivityIndicator,
+  Alert,
   Linking,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import {PACKAGE_TYPE, type PurchasesPackage} from 'react-native-purchases';
 import {useTheme} from '../theme/ThemeContext';
+import LegalContentModal from '../components/LegalContentModal';
+import {useAppDispatch, useAppSelector} from '../store/hooks';
+import {setCustomerInfo} from '../store/slices/subscriptionSlice';
+import {useIsPro} from '../hooks/useSubscription';
+import {
+  getCurrentOffering,
+  purchasePackage,
+  restorePurchases,
+  refreshCustomerInfo,
+  isProActive,
+  ENTITLEMENT_ID,
+} from '../services/purchases';
 
-const {width, height} = Dimensions.get('window');
+const MANAGE_SUBSCRIPTION_URL = 'https://apps.apple.com/account/subscriptions';
+
+const {height} = Dimensions.get('window');
 
 interface PaywallScreenProps {
   visible?: boolean;
   onClose: () => void;
-  onPurchase?: (planId: string) => void;
+  /**
+   * Called when a purchase or trial is completed.
+   * @param productIdentifier  The RevenueCat product ID (e.g. the Apple product ID)
+   * @param isTrial            True when the user is fresh AND chose a free-trial plan.
+   * @param coinsToGrant       Coin amount the backend should credit for this purchase
+   *                           (20 for a fresh-user free trial, otherwise the plan's
+   *                           full bonusCoins).
+   */
+  onPurchase?: (
+    productIdentifier: string,
+    isTrial: boolean,
+    coinsToGrant: number,
+  ) => void;
 }
 
 interface PricingPlan {
-  id: string;
+  id: 'weekly' | 'monthly' | 'yearly';
   title: string;
-  subtitle: string;
   price: string;
   billingPeriod: string;
+  /** Coins granted when the paid period is active (not during trial). */
+  bonusCoins: number;
+  /** Coins granted at the start of the free-trial period. */
+  trialBonusCoins?: number;
+  trialText?: string;
   isPopular?: boolean;
 }
+
+const FEATURES = [
+  'Unlimited AI photo transformations',
+  'Virtual Try-On & outfit swap',
+  'Animated videos & AI comics',
+  'Pro editor with AI effects',
+  'Restore & enhance old photos',
+];
 
 const PRICING_PLANS: PricingPlan[] = [
   {
     id: 'weekly',
-    title: '7-Day Full Access',
-    subtitle: 'Then $11.99/week',
-    price: 'USD 5.99',
-    billingPeriod: 'Billed weekly',
-    isPopular: true,
+    title: 'Weekly',
+    price: '$6.99',
+    billingPeriod: 'per week',
+    bonusCoins: 700,
+    trialBonusCoins: 20,   // 20 coins during the free-trial, 700 once paid kicks in
+    trialText: '7-day free trial',
+  },
+  {
+    id: 'monthly',
+    title: 'Monthly',
+    price: '$24.99',
+    billingPeriod: 'per month',
+    bonusCoins: 2500,
   },
   {
     id: 'yearly',
-    title: 'Yearly Access',
-    subtitle: 'was $59.99',
-    price: 'USD 49.99',
-    billingPeriod: 'Billed yearly',
+    title: 'Yearly',
+    price: '$44.99',
+    billingPeriod: 'per year',
+    bonusCoins: 5000,
+    isPopular: true,
   },
 ];
 
-const PaywallScreen: React.FC<PaywallScreenProps> = ({
-  onClose,
-  onPurchase,
-}) => {
+const planToPackageType: Record<PricingPlan['id'], PACKAGE_TYPE> = {
+  weekly: PACKAGE_TYPE.WEEKLY,
+  monthly: PACKAGE_TYPE.MONTHLY,
+  yearly: PACKAGE_TYPE.ANNUAL,
+};
+
+const PaywallScreen: React.FC<PaywallScreenProps> = ({onClose, onPurchase}) => {
   const {colors} = useTheme();
-  const [selectedPlan, setSelectedPlan] = useState<string>('weekly');
-  const [timeLeft, setTimeLeft] = useState({hours: 0, minutes: 59, seconds: 59});
-  const [joinedCount] = useState(Math.floor(Math.random() * 1000) + 1500);
+  const dispatch = useAppDispatch();
+  const isPro = useIsPro();
+  const customerInfo = useAppSelector(state => state.subscription.customerInfo);
+  const [selectedPlan, setSelectedPlan] = useState<PricingPlan['id']>('yearly');
+  const [legalModal, setLegalModal] = useState<{visible: boolean; type: 'terms' | 'privacy'}>({
+    visible: false,
+    type: 'terms',
+  });
+  const [packages, setPackages] = useState<PurchasesPackage[]>([]);
+  const [offeringsLoaded, setOfferingsLoaded] = useState(false);
+  const [purchasing, setPurchasing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
-  // Countdown timer
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev.seconds > 0) {
-          return {...prev, seconds: prev.seconds - 1};
-        } else if (prev.minutes > 0) {
-          return {...prev, minutes: prev.minutes - 1, seconds: 59};
-        } else if (prev.hours > 0) {
-          return {hours: prev.hours - 1, minutes: 59, seconds: 59};
-        }
-        return prev;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
+    let cancelled = false;
+    (async () => {
+      const offering = await getCurrentOffering();
+      if (cancelled) return;
+      setPackages(offering?.availablePackages ?? []);
+      setOfferingsLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const formatTime = (num: number) => num.toString().padStart(2, '0');
-
-  const handlePurchase = () => {
-    onPurchase?.(selectedPlan);
+  /**
+   * Determine which plan ID the user is currently subscribed to, by matching
+   * the active entitlement's productIdentifier against the loaded packages.
+   * Returns null if the user is not subscribed or packages haven't loaded yet.
+   */
+  const getCurrentPlanId = (): PricingPlan['id'] | null => {
+    const activeProductId =
+      customerInfo?.entitlements.active[ENTITLEMENT_ID]?.productIdentifier;
+    if (!activeProductId || packages.length === 0) return null;
+    const matchedPkg = packages.find(
+      p => p.product.identifier === activeProductId,
+    );
+    if (!matchedPkg) return null;
+    const entry = Object.entries(planToPackageType).find(
+      ([, type]) => type === matchedPkg.packageType,
+    );
+    return (entry?.[0] as PricingPlan['id']) ?? null;
   };
 
-  const openLink = (url: string) => {
-    Linking.openURL(url);
+  const currentPlanId = getCurrentPlanId();
+  // After cancellation Apple keeps the entitlement active until the period
+  // ends; willRenew=false is the signal that the user has cancelled.
+  const isCanceled =
+    isPro &&
+    customerInfo?.entitlements.active[ENTITLEMENT_ID]?.willRenew === false;
+
+  const findPackage = (planId: PricingPlan['id']): PurchasesPackage | null => {
+    const wanted = planToPackageType[planId];
+    return packages.find(p => p.packageType === wanted) ?? null;
   };
+
+  const handleManageSubscription = async () => {
+    try {
+      await Linking.openURL(MANAGE_SUBSCRIPTION_URL);
+    } catch {
+      Alert.alert(
+        'Manage Subscription',
+        'Open the App Store → tap your profile → Subscriptions to manage your plan.',
+      );
+    }
+  };
+
+  const handlePurchase = async () => {
+    if (purchasing) return;
+
+    // If already on this exact plan and it's still renewing, nothing to do.
+    if (isPro && currentPlanId === selectedPlan && !isCanceled) return;
+
+    // If the user already had this plan but cancelled it, Apple does not let
+    // us un-cancel programmatically — send them to App Store Subscriptions.
+    if (isPro && currentPlanId === selectedPlan && isCanceled) {
+      handleManageSubscription();
+      return;
+    }
+
+    const pkg = findPackage(selectedPlan);
+    if (!pkg) {
+      console.warn(
+        '[Paywall] No matching package for plan',
+        selectedPlan,
+        'packages:',
+        packages.map(p => ({id: p.identifier, type: p.packageType})),
+      );
+      Alert.alert(
+        'Plan unavailable',
+        'This subscription is not available right now. Please try again later.',
+      );
+      return;
+    }
+
+    setPurchasing(true);
+    try {
+      console.log(
+        '[Paywall] Starting purchase for',
+        pkg.identifier,
+        pkg.product.identifier,
+      );
+      const result = await purchasePackage(pkg);
+      if (result) {
+        // Trial-bonus rule: a brand-new user who never had a prior
+        // subscription AND chose a package that offers a free trial gets the
+        // 20-coin trial bonus. Everyone else gets the plan's full coin
+        // amount. We OR-merge with periodType so we still flag a trial when
+        // RevenueCat does report it explicitly.
+        const entitlement =
+          result.customerInfo.entitlements.active[ENTITLEMENT_ID];
+        const priorPurchases =
+          result.customerInfo.allPurchasedProductIdentifiers || [];
+        const isFirstSubscriptionPurchase = priorPurchases.filter(
+          id => id !== result.productIdentifier,
+        ).length === 0;
+        const packageOffersFreeTrial =
+          (pkg.product.introPrice?.price ?? -1) === 0;
+        const isTrial =
+          entitlement?.periodType === 'trial' ||
+          (isFirstSubscriptionPurchase && packageOffersFreeTrial);
+
+        const selectedPricingPlan = PRICING_PLANS.find(p => p.id === selectedPlan);
+        const fullPlanCoins = selectedPricingPlan?.bonusCoins ?? 0;
+        const trialCoins = selectedPricingPlan?.trialBonusCoins ?? 20;
+        const coinsToGrant = isTrial ? trialCoins : fullPlanCoins;
+
+        console.log('[Paywall] Purchase succeeded — coin grant decision:', {
+          productIdentifier: result.productIdentifier,
+          isPro: isProActive(result.customerInfo),
+          isTrial,
+          coinsToGrant,
+          isFirstSubscriptionPurchase,
+          packageOffersFreeTrial,
+          introPrice: pkg.product.introPrice,
+          periodType: entitlement?.periodType,
+          priorPurchases,
+        });
+        dispatch(setCustomerInfo(result.customerInfo));
+        // For tier upgrades (PRODUCT_CHANGE), the customerInfo returned by
+        // purchasePackage can still carry the previous productIdentifier
+        // until RC syncs. Force a fresh fetch so the drawer's plan label and
+        // any other UI that reads productIdentifier flips to the new tier
+        // immediately.
+        refreshCustomerInfo().then(fresh => {
+          if (fresh) dispatch(setCustomerInfo(fresh));
+        });
+        if (isProActive(result.customerInfo)) {
+          onPurchase?.(result.productIdentifier, isTrial, coinsToGrant);
+          onClose();
+        } else {
+          Alert.alert(
+            'Purchase processed',
+            'Your purchase went through, but Pro access is not active yet. Please try Restore or contact support.',
+          );
+        }
+      }
+    } catch (err: any) {
+      console.warn(
+        '[Paywall] Purchase error:',
+        err?.code,
+        err?.message,
+        err?.userCancelled,
+      );
+      if (!err?.userCancelled) {
+        Alert.alert(
+          'Purchase failed',
+          err?.message || 'Something went wrong. Please try again.',
+        );
+      }
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (restoring) return;
+    setRestoring(true);
+    try {
+      const info = await restorePurchases();
+      if (info) {
+        dispatch(setCustomerInfo(info));
+        if (isProActive(info)) {
+          Alert.alert('Purchases restored', 'Your subscription has been restored.');
+          onClose();
+        } else {
+          Alert.alert(
+            'No purchases found',
+            'We could not find an active subscription to restore.',
+          );
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Restore failed', err?.message || 'Please try again.');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  /**
+   * CTA label:
+   *  - Pro, selected = current, not cancelled → "Current Plan" (disabled)
+   *  - Pro, selected = current, cancelled     → "Reactivate in App Store"
+   *  - Pro, selected ≠ current                → "Switch to [Plan]"
+   *  - New user, weekly selected              → "Start Free Trial"
+   *  - New user, other plan selected          → "Continue"
+   */
+  const ctaText = (() => {
+    if (isPro) {
+      if (currentPlanId === selectedPlan) {
+        return isCanceled ? 'Reactivate in App Store' : 'Current Plan';
+      }
+      const planTitle =
+        PRICING_PLANS.find(p => p.id === selectedPlan)?.title ?? selectedPlan;
+      return `Switch to ${planTitle}`;
+    }
+    return selectedPlan === 'weekly' ? 'Start Free Trial' : 'Continue';
+  })();
+
+  const ctaDisabled =
+    purchasing ||
+    !offeringsLoaded ||
+    (isPro && currentPlanId === selectedPlan && !isCanceled);
 
   return (
     <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}>
@@ -91,7 +338,6 @@ const PaywallScreen: React.FC<PaywallScreenProps> = ({
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
-        {/* Hero Section */}
         <View style={styles.heroSection}>
           <Image
             source={require('../../assets/paywall_bg.jpg')}
@@ -103,7 +349,6 @@ const PaywallScreen: React.FC<PaywallScreenProps> = ({
             style={styles.heroGradient}
           />
 
-          {/* Close Button */}
           <TouchableOpacity
             style={[styles.closeButton, {backgroundColor: 'rgba(0,0,0,0.5)'}]}
             onPress={onClose}
@@ -111,135 +356,174 @@ const PaywallScreen: React.FC<PaywallScreenProps> = ({
             <Text style={styles.closeButtonText}>×</Text>
           </TouchableOpacity>
 
-          {/* Hero Title */}
-          <View style={styles.heroContent}>
-            <Text style={styles.heroTitle}>Unlimited Access</Text>
-            <Text style={styles.heroSubtitle}>Transform Your Photos</Text>
-          </View>
         </View>
 
-        {/* Timer Section */}
-        <View style={styles.timerSection}>
-          <Text style={[styles.offerText, {color: colors.textSecondary}]}>
-            Offer ends in:
-          </Text>
-          <View style={styles.timerContainer}>
-            <Text style={[styles.timerText, {color: colors.primary}]}>
-              {formatTime(timeLeft.hours)}:{formatTime(timeLeft.minutes)}:{formatTime(timeLeft.seconds)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Joined Badge */}
-        <View style={[styles.joinedBadge, {backgroundColor: colors.primary + '20'}]}>
-          <Text style={[styles.joinedText, {color: colors.primary}]}>
-            {joinedCount} joined today!
-          </Text>
-        </View>
-
-        {/* Pricing Cards */}
-        <View style={styles.pricingContainer}>
-          {PRICING_PLANS.map(plan => (
-            <TouchableOpacity
-              key={plan.id}
-              style={[
-                styles.pricingCard,
-                {
-                  backgroundColor: colors.cardBackground,
-                  borderColor:
-                    selectedPlan === plan.id ? colors.primary : colors.border,
-                  borderWidth: selectedPlan === plan.id ? 2 : 1,
-                },
-              ]}
-              onPress={() => setSelectedPlan(plan.id)}
-              activeOpacity={0.8}>
-              <Text style={[styles.planTitle, {color: colors.primary}]}>
-                {plan.title}
+        <View style={styles.featuresContainer}>
+          {FEATURES.map(feature => (
+            <View key={feature} style={styles.featureRow}>
+              <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+              <Text style={[styles.featureText, {color: colors.textSecondary}]}>
+                {feature}
               </Text>
-              <Text style={[styles.planSubtitle, {color: colors.textSecondary}]}>
-                {plan.subtitle}
-              </Text>
-              <Text style={[styles.planPrice, {color: colors.textPrimary}]}>
-                {plan.price}
-              </Text>
-              <Text style={[styles.planBilling, {color: colors.textTertiary}]}>
-                {plan.billingPeriod}
-              </Text>
-              {plan.isPopular && (
-                <View style={[styles.popularBadge, {backgroundColor: colors.primary}]}>
-                  <Text style={styles.popularText}>Best Value</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            </View>
           ))}
         </View>
 
+        <View style={styles.spacer} />
 
-        {/* CTA Button */}
+        {/* Plan cards — shown for all users; active plan gets an ACTIVE badge */}
+        <View style={styles.pricingContainer}>
+          {PRICING_PLANS.map(plan => {
+            const isSelected = selectedPlan === plan.id;
+            const isCurrentPlan = plan.id === currentPlanId;
+            return (
+              <TouchableOpacity
+                key={plan.id}
+                style={[
+                  styles.pricingCard,
+                  {
+                    backgroundColor: colors.cardBackground,
+                    borderColor: isSelected ? colors.primary : colors.border,
+                    borderWidth: isSelected ? 2 : 1,
+                  },
+                ]}
+                onPress={() => setSelectedPlan(plan.id)}
+                activeOpacity={0.8}>
+                <View style={styles.cardLeft}>
+                  <View
+                    style={[
+                      styles.radioOuter,
+                      {borderColor: isSelected ? colors.primary : colors.border},
+                    ]}>
+                    {isSelected && (
+                      <View style={[styles.radioInner, {backgroundColor: colors.primary}]} />
+                    )}
+                  </View>
+                  <View style={styles.cardTextColumn}>
+                    <Text style={[styles.planTitle, {color: colors.textPrimary}]}>
+                      {plan.title}
+                    </Text>
+                    {plan.trialText && !isPro && (
+                      <Text style={[styles.planTrial, {color: colors.primary}]}>
+                        {plan.trialText}
+                      </Text>
+                    )}
+                    <View style={styles.coinRow}>
+                      <Ionicons name="logo-bitcoin" size={14} color={colors.primary} />
+                      <Text style={[styles.coinText, {color: colors.textSecondary}]}>
+                        {plan.trialBonusCoins && !isPro
+                          ? `${plan.trialBonusCoins} coins now · ${plan.bonusCoins.toLocaleString()} after trial`
+                          : `${plan.bonusCoins.toLocaleString()} bonus coins`}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.cardRight}>
+                  <Text style={[styles.planPrice, {color: colors.textPrimary}]}>
+                    {plan.price}
+                  </Text>
+                  <Text style={[styles.planBilling, {color: colors.textTertiary}]}>
+                    {plan.billingPeriod}
+                  </Text>
+                </View>
+
+                {plan.isPopular && !isCurrentPlan && (
+                  <View style={[styles.popularBadge, {backgroundColor: colors.primary}]}>
+                    <Text style={styles.popularText}>BEST VALUE</Text>
+                  </View>
+                )}
+                {isCurrentPlan && (
+                  <View
+                    style={[
+                      styles.activeBadge,
+                      {
+                        backgroundColor: isCanceled
+                          ? colors.warning + '22'
+                          : colors.primary + '22',
+                        borderColor: isCanceled ? colors.warning : colors.primary,
+                      },
+                    ]}>
+                    <Text
+                      style={[
+                        styles.activeBadgeText,
+                        {color: isCanceled ? colors.warning : colors.primary},
+                      ]}>
+                      {isCanceled ? 'CANCELED' : 'ACTIVE'}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         <LinearGradient
           colors={[colors.gradientStart, colors.gradientEnd]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 0}}
-          style={styles.ctaGradient}>
+          style={[styles.ctaGradient, ctaDisabled && styles.ctaDisabled]}>
           <TouchableOpacity
             style={styles.ctaButton}
             onPress={handlePurchase}
+            disabled={ctaDisabled}
             activeOpacity={0.9}>
-            <Text style={styles.ctaText}>Start Trial</Text>
+            {purchasing ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.ctaText}>{ctaText}</Text>
+            )}
           </TouchableOpacity>
         </LinearGradient>
 
-        {/* Cancel Text */}
-        <Text style={[styles.cancelText, {color: colors.textTertiary}]}>
-          Cancel anytime, no questions asked.
-        </Text>
+        {isPro ? (
+          <TouchableOpacity
+            onPress={handleManageSubscription}
+            style={styles.secondaryAction}>
+            <Text style={[styles.secondaryActionText, {color: colors.textSecondary}]}>
+              Manage Subscription
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={[styles.cancelText, {color: colors.textTertiary}]}>
+            Cancel anytime, no questions asked.
+          </Text>
+        )}
 
-        {/* Footer Links */}
         <View style={styles.footerLinks}>
-          <TouchableOpacity onPress={() => openLink('https://example.com/terms')}>
-            <Text style={[styles.footerLink, {color: colors.textSecondary}]}>
-              Terms of use
-            </Text>
+          <TouchableOpacity onPress={() => setLegalModal({visible: true, type: 'terms'})}>
+            <Text style={[styles.footerLink, {color: colors.textSecondary}]}>Terms of use</Text>
           </TouchableOpacity>
           <View style={[styles.footerDivider, {backgroundColor: colors.border}]} />
-          <TouchableOpacity onPress={() => openLink('https://example.com/privacy')}>
-            <Text style={[styles.footerLink, {color: colors.textSecondary}]}>
-              Privacy policy
-            </Text>
+          <TouchableOpacity onPress={() => setLegalModal({visible: true, type: 'privacy'})}>
+            <Text style={[styles.footerLink, {color: colors.textSecondary}]}>Privacy policy</Text>
           </TouchableOpacity>
           <View style={[styles.footerDivider, {backgroundColor: colors.border}]} />
-          <TouchableOpacity onPress={() => console.log('Restore')}>
+          <TouchableOpacity onPress={handleRestore} disabled={restoring}>
             <Text style={[styles.footerLink, {color: colors.textSecondary}]}>
-              Restore
+              {restoring ? 'Restoring…' : 'Restore'}
             </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <LegalContentModal
+        visible={legalModal.visible}
+        type={legalModal.type}
+        onClose={() => setLegalModal(prev => ({...prev, visible: false}))}
+      />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  heroSection: {
-    height: height * 0.4,
-    position: 'relative',
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-  heroGradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
+  container: {flex: 1},
+  scrollView: {flex: 1},
+  scrollContent: {flexGrow: 1, paddingBottom: 20},
+  spacer: {flex: 1, minHeight: 16},
+  heroSection: {height: height * 0.45, position: 'relative'},
+  heroImage: {width: '100%', height: '100%', top:0},
+  heroGradient: {...StyleSheet.absoluteFillObject},
   closeButton: {
     position: 'absolute',
     top: 16,
@@ -250,97 +534,71 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  closeButtonText: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: '300',
+  closeButtonText: {color: '#fff', fontSize: 24, fontWeight: '300'},
+  featuresContainer: {
+    paddingHorizontal: 24,
+    marginTop: -150,
+    gap: 8,
   },
-  heroContent: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
+  featureRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
   },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#fff',
-    textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: {width: 0, height: 2},
-    textShadowRadius: 4,
-  },
-  heroSubtitle: {
-    fontSize: 18,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.9)',
-    marginTop: 8,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: {width: 0, height: 1},
-    textShadowRadius: 2,
-  },
-  timerSection: {
-    alignItems: 'center',
-    marginTop: -20,
-    paddingHorizontal: 20,
-  },
-  offerText: {
+  featureText: {
     fontSize: 14,
     fontWeight: '500',
-    marginBottom: 8,
-  },
-  timerContainer: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  timerText: {
-    fontSize: 36,
-    fontWeight: '700',
-    letterSpacing: 2,
-  },
-  joinedBadge: {
-    alignSelf: 'flex-start',
-    marginLeft: 20,
-    marginTop: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  joinedText: {
-    fontSize: 13,
-    fontWeight: '600',
+    flex: 1,
   },
   pricingContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     marginTop: 12,
-    gap: 12,
+    gap: 10,
   },
   pricingCard: {
-    flex: 1,
-    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
     borderRadius: 16,
     position: 'relative',
   },
-  planTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+  cardLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  planSubtitle: {
-    fontSize: 12,
+  cardRight: {
+    alignItems: 'flex-end',
+    marginLeft: 12,
+  },
+  cardTextColumn: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  planTitle: {fontSize: 16, fontWeight: '700'},
+  planTrial: {fontSize: 12, fontWeight: '600', marginTop: 2},
+  coinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 4,
+    gap: 4,
   },
-  planPrice: {
-    fontSize: 28,
-    fontWeight: '800',
-    marginTop: 12,
-  },
-  planBilling: {
-    fontSize: 12,
-    marginTop: 4,
-  },
+  coinText: {fontSize: 12, fontWeight: '500'},
+  planPrice: {fontSize: 22, fontWeight: '800'},
+  planBilling: {fontSize: 11, marginTop: 2},
   popularBadge: {
     position: 'absolute',
     top: -10,
@@ -349,14 +607,20 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 8,
   },
-  popularText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
+  popularText: {color: '#fff', fontSize: 10, fontWeight: '700', letterSpacing: 0.5},
+  activeBadge: {
+    position: 'absolute',
+    top: -10,
+    right: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
   },
+  activeBadgeText: {fontSize: 10, fontWeight: '700', letterSpacing: 0.5},
   ctaGradient: {
     marginHorizontal: 20,
-    marginTop: 32,
+    marginTop: 20,
     borderRadius: 16,
     shadowColor: '#FF1B6D',
     shadowOffset: {width: 0, height: 4},
@@ -365,35 +629,32 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   ctaButton: {
-    paddingVertical: 18,
+    paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ctaText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
+  ctaDisabled: {
+    opacity: 0.6,
   },
-  cancelText: {
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 16,
+  secondaryAction: {
+    alignItems: 'center',
+    paddingVertical: 10,
   },
+  secondaryActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  ctaText: {color: '#fff', fontSize: 18, fontWeight: '700'},
+  cancelText: {fontSize: 13, textAlign: 'center', marginTop: 10},
   footerLinks: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 14,
     gap: 12,
   },
-  footerLink: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  footerDivider: {
-    width: 1,
-    height: 14,
-  },
+  footerLink: {fontSize: 13, fontWeight: '500'},
+  footerDivider: {width: 1, height: 14},
 });
 
 export default PaywallScreen;

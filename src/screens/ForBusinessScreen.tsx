@@ -29,6 +29,8 @@ import {addPendingImageJob} from '../store/slices/imageNotificationSlice';
 import {triggerHaptic} from '../utils/haptics';
 import AiConsentDialog from '../components/AiConsentDialog';
 import {useAiConsent} from '../hooks/useAiConsent';
+import {useIsPro} from '../hooks/useSubscription';
+import api from '../services/api';
 
 
 interface BusinessCategory {
@@ -72,6 +74,7 @@ const ForBusinessScreen: React.FC = () => {
   );
   const accessToken = useAppSelector(state => state.auth.accessToken);
   const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
+  const isPro = useIsPro();
 
   const [productPhoto, setProductPhoto] = useState<ImageAsset | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -165,8 +168,15 @@ const ForBusinessScreen: React.FC = () => {
 
   const handleTemplateGenerate = async (generateConfig: Record<string, any>) => {
     if (!productPhoto || !accessToken) return;
-    if (!(await requireConsent())) return;
+    // Close the template composer before showing any other modal (paywall/consent)
+    // so iOS doesn't stack two RN <Modal>s — that hides the second one and looks like a freeze.
     setSelectedTemplate(null);
+    await new Promise(resolve => setTimeout(resolve, 350));
+    if (!isPro) {
+      api.triggerSubscriptionRequired();
+      return;
+    }
+    if (!(await requireConsent())) return;
     // Wait for modal to fully unmount, then run API call
     setTimeout(async () => {
       setGenerating(true);
@@ -175,8 +185,11 @@ const ForBusinessScreen: React.FC = () => {
         const formData = new FormData();
         const ext = productPhoto.fileName?.split('.').pop()?.toLowerCase() || 'jpg';
         const mimeType = productPhoto.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+        const normalizedUri = productPhoto.uri.startsWith('file://') || /^https?:\/\//.test(productPhoto.uri)
+          ? productPhoto.uri
+          : `file://${productPhoto.uri}`;
         formData.append('image', {
-          uri: productPhoto.uri,
+          uri: normalizedUri,
           type: mimeType,
           name: productPhoto.fileName || `photo.${ext}`,
         } as any);
@@ -198,17 +211,28 @@ const ForBusinessScreen: React.FC = () => {
         if (generateConfig.videoAspectRatio) {
           formData.append('videoAspectRatio', generateConfig.videoAspectRatio);
         }
-        const response = await fetch(
-          `${config.apiBaseUrl}/api/gemini/GeminiImage/template-generate`,
-          {
-            method: 'POST',
-            headers: {
-              Accept: 'application/json',
-              Authorization: `Bearer ${accessToken}`,
-            },
-            body: formData,
-          },
+        const controller = new AbortController();
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          config.imageTransformTimeout,
         );
+        let response: Response;
+        try {
+          response = await fetch(
+            `${config.apiBaseUrl}/api/gemini/GeminiImage/template-generate`,
+            {
+              method: 'POST',
+              headers: {
+                Accept: 'application/json',
+                Authorization: `Bearer ${accessToken}`,
+              },
+              body: formData,
+              signal: controller.signal,
+            },
+          );
+        } finally {
+          clearTimeout(timeoutId);
+        }
         if (!response.ok) {
           const err = await response.json().catch(() => ({}));
           throw new Error(err.message || `Request failed (${response.status})`);
@@ -220,7 +244,11 @@ const ForBusinessScreen: React.FC = () => {
         setLastGenerateHadVideo(!!generateConfig.creationAnimation);
         setShowComingSoon(true);
       } catch (err: any) {
-        setGenerateError(err.message || 'Something went wrong');
+        const message =
+          err?.name === 'AbortError'
+            ? 'Upload timed out. Please check your connection and try again.'
+            : err?.message || 'Something went wrong';
+        setGenerateError(message);
       } finally {
         setGenerating(false);
       }

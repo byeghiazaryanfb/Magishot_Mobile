@@ -649,6 +649,7 @@ const styles = StyleSheet.create({
   },
   scrollContentTablet: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 0,
   },
   formContainer: {

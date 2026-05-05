@@ -22,7 +22,7 @@ import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import {useTheme} from '../theme/ThemeContext';
 import GradientButton from '../components/GradientButton';
 import {RootStackParamList} from '../navigation/RootNavigator';
-import {requestPhotoLibraryPermission, showPermissionDeniedAlert, isPermissionError} from '../utils/permissions';
+import {requestPhotoLibraryPermissionDetailed, saveToCameraRoll, showPermissionDeniedAlert, isPermissionError} from '../utils/permissions';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('window');
 
@@ -46,8 +46,9 @@ const ImageResultScreen: React.FC = () => {
     try {
       setIsSaving(true);
 
-      const hasPermission = await requestPhotoLibraryPermission();
-      if (!hasPermission) {
+      const permission = await requestPhotoLibraryPermissionDetailed();
+      if (permission === 'cancelled') return;
+      if (permission === 'denied') {
         showPermissionDeniedAlert('photo');
         return;
       }
@@ -60,7 +61,7 @@ const ImageResultScreen: React.FC = () => {
           // On iOS, save base64 to temp file then to camera roll
           const filePath = `${RNFetchBlob.fs.dirs.CacheDir}/${fileName}`;
           await RNFetchBlob.fs.writeFile(filePath, imageResult.imageBase64, 'base64');
-          await CameraRoll.saveAsset(`file://${filePath}`, {type: 'photo'});
+          await saveToCameraRoll(`file://${filePath}`, {type: 'photo'});
         } else {
           // On Android, save to Downloads
           const filePath = `${RNFetchBlob.fs.dirs.DownloadDir}/${fileName}`;
@@ -76,7 +77,7 @@ const ImageResultScreen: React.FC = () => {
         const fileName = imageResult.fileName || `generated_${Date.now()}.png`;
 
         if (Platform.OS === 'ios') {
-          await CameraRoll.saveAsset(imageResult.imageUrl, {type: 'photo'});
+          await saveToCameraRoll(imageResult.imageUrl, {type: 'photo'});
         } else {
           const filePath = `${RNFetchBlob.fs.dirs.DownloadDir}/${fileName}`;
           await RNFetchBlob.config({

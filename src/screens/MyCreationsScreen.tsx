@@ -43,8 +43,6 @@ import {
   VideoGalleryItem,
   VideoJob,
 } from '../store/slices/videoNotificationSlice';
-import type {ImageJob} from '../store/slices/imageNotificationSlice';
-import type {ComicJob} from '../store/slices/comicNotificationSlice';
 import {fetchUnreadCounts, markPhotoViewed} from '../store/slices/appSlice';
 import CustomDialog from '../components/CustomDialog';
 import AnimateResultModal from '../components/AnimateResultModal';
@@ -55,18 +53,13 @@ import {config} from '../utils/config';
 type TabType = 'photos' | 'videos' | 'comics';
 
 // Unified photo list item type
-type PhotoListItem =
-  | {type: 'activeImage'; job: ImageJob}
-  | {type: 'photo'; photo: UserPhoto};
+type PhotoListItem = {type: 'photo'; photo: UserPhoto};
 
 // Unified comic list item type
-type ComicListItem =
-  | {type: 'activeComic'; job: ComicJob}
-  | {type: 'comic'; comic: UserComic};
+type ComicListItem = {type: 'comic'; comic: UserComic};
 
 // Unified video list item type
 type VideoListItem =
-  | {type: 'active'; job: VideoJob}
   | {type: 'ready'; job: VideoJob}
   | {type: 'failed'; job: VideoJob}
   | {type: 'gallery'; video: VideoGalleryItem};
@@ -112,9 +105,6 @@ const MyCreationsScreen: React.FC = () => {
     message: string;
   }>({visible: false, type: 'error', title: '', message: ''});
 
-  // ─── Image jobs (for pending/processing indicators) ───
-  const imageJobs = useAppSelector(state => state.imageNotification.jobs);
-
   // ─── Track viewed photos via Redux (shared with PhotoDetailScreen) ───
   const viewedPhotoIds = useAppSelector(state => state.app.viewedPhotoIds);
 
@@ -136,7 +126,6 @@ const MyCreationsScreen: React.FC = () => {
   const [isDeletingAllVideos, setIsDeletingAllVideos] = useState(false);
 
   // ─── Comics state ───
-  const comicJobs = useAppSelector(state => state.comicNotification.jobs);
   const [comics, setComics] = useState<UserComic[]>([]);
   const [isLoadingComics, setIsLoadingComics] = useState(false);
   const [isRefreshingComics, setIsRefreshingComics] = useState(false);
@@ -314,11 +303,6 @@ const MyCreationsScreen: React.FC = () => {
   }, [accessToken, fetchPhotos]);
 
   // ─── Videos: data ───
-  const activeJobs = useMemo(
-    () => Object.values(jobs).filter(j => j.status === 'pending' || j.status === 'processing'),
-    [jobs],
-  );
-
   const readyJobs = useMemo(
     () => Object.values(jobs)
       .filter(j => j.status === 'ready' && j.videoUrl)
@@ -342,12 +326,11 @@ const MyCreationsScreen: React.FC = () => {
 
   const videoListData: VideoListItem[] = useMemo(() => {
     const items: VideoListItem[] = [];
-    activeJobs.forEach(job => items.push({type: 'active', job}));
     failedJobs.forEach(job => items.push({type: 'failed', job}));
     readyJobs.forEach(job => items.push({type: 'ready', job}));
     dedupedGalleryVideos.forEach(video => items.push({type: 'gallery', video}));
     return items;
-  }, [activeJobs, failedJobs, readyJobs, dedupedGalleryVideos]);
+  }, [failedJobs, readyJobs, dedupedGalleryVideos]);
 
   const videoTotalCount = readyJobs.length + dedupedGalleryVideos.length;
 
@@ -403,20 +386,11 @@ const MyCreationsScreen: React.FC = () => {
     }
   }, [activeTab, comicsLoaded, fetchComics]);
 
-  // ─── Comics: active jobs ───
-  const activeComicJobs = useMemo(
-    () => Object.values(comicJobs).filter(
-      j => j.status === 'pending' || j.status === 'processing',
-    ),
-    [comicJobs],
-  );
-
   const comicListData: ComicListItem[] = useMemo(() => {
     const items: ComicListItem[] = [];
-    activeComicJobs.forEach(job => items.push({type: 'activeComic', job}));
     comics.forEach(comic => items.push({type: 'comic', comic}));
     return items;
-  }, [activeComicJobs, comics]);
+  }, [comics]);
 
   // ─── Comics: handlers ───
   const handleComicRefresh = useCallback(() => {
@@ -441,6 +415,7 @@ const MyCreationsScreen: React.FC = () => {
       await deleteComic(comicItemToDelete, accessToken);
       setComics(prev => prev.filter(c => c.id !== comicItemToDelete));
       setComicTotalCount(prev => prev - 1);
+      dispatch(fetchUnreadCounts());
       showMessage('success', 'Deleted', 'Comic deleted successfully');
     } catch {
       showMessage('error', 'Error', 'Failed to delete comic');
@@ -484,6 +459,7 @@ const MyCreationsScreen: React.FC = () => {
       await deleteUserPhoto(accessToken, itemToDelete);
       setPhotos(prev => prev.filter(p => p.id !== itemToDelete));
       setPhotoTotalCount(prev => prev - 1);
+      dispatch(fetchUnreadCounts());
       showMessage('success', 'Deleted', 'Photo deleted successfully');
     } catch {
       showMessage('error', 'Error', 'Failed to delete photo');
@@ -513,6 +489,7 @@ const MyCreationsScreen: React.FC = () => {
       setHasMorePhotos(false);
       setNextPhotoCursor(null);
       GalleryCache.clearPhotos();
+      dispatch(fetchUnreadCounts());
       showMessage('success', 'Cleared', response.message || 'All photos deleted successfully');
     } catch {
       showMessage('error', 'Error', 'Failed to delete all photos');
@@ -552,6 +529,7 @@ const MyCreationsScreen: React.FC = () => {
         showMessage('success', 'Deleted', `${ids.length} comic(s) deleted`);
       }
       exitSelectionMode();
+      dispatch(fetchUnreadCounts());
     } catch {
       showMessage('error', 'Error', 'Failed to delete selected items');
     } finally {
@@ -574,20 +552,11 @@ const MyCreationsScreen: React.FC = () => {
     }
   }, [isLoadingMorePhotos, hasMorePhotos, nextPhotoCursor, fetchPhotos]);
 
-  // ─── Photos: active image jobs ───
-  const activeImageJobs = useMemo(
-    () => Object.values(imageJobs).filter(
-      j => j.status === 'pending' || j.status === 'processing',
-    ),
-    [imageJobs],
-  );
-
   const photoListData: PhotoListItem[] = useMemo(() => {
     const items: PhotoListItem[] = [];
-    activeImageJobs.forEach(job => items.push({type: 'activeImage', job}));
     photos.forEach(photo => items.push({type: 'photo', photo}));
     return items;
-  }, [activeImageJobs, photos]);
+  }, [photos]);
 
   // ─── Videos: handlers ───
   const handleVideoRefresh = useCallback(() => {
@@ -623,6 +592,7 @@ const MyCreationsScreen: React.FC = () => {
     } catch {
       dispatch(removeJob(videoItemToDelete));
     } finally {
+      dispatch(fetchUnreadCounts());
       setIsDeletingVideo(false);
       setVideoDeleteDialogVisible(false);
       setVideoItemToDelete(null);
@@ -649,6 +619,7 @@ const MyCreationsScreen: React.FC = () => {
       dispatch(clearAllVideoNotifications());
       dispatch(resetGallery());
       GalleryCache.clearVideos();
+      dispatch(fetchUnreadCounts());
       showMessage('success', 'Cleared', 'All videos deleted successfully');
     } catch {
       showMessage('error', 'Error', 'Failed to delete all videos');
@@ -688,21 +659,6 @@ const MyCreationsScreen: React.FC = () => {
 
   // ─── Photos: render items ───
   const renderPhotoItem = ({item}: {item: PhotoListItem}) => {
-    if (item.type === 'activeImage') {
-      return (
-        <View style={[styles.gridItem, {backgroundColor: colors.backgroundTertiary}]}>
-          <View style={[styles.gridImage, {justifyContent: 'center', alignItems: 'center'}]}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-          <View style={[styles.gridOverlay, {backgroundColor: 'rgba(0,0,0,0.5)'}]}>
-            <Text style={styles.gridLabel} numberOfLines={1}>
-              {item.job.status === 'pending' ? 'Queued...' : 'Processing...'}
-            </Text>
-          </View>
-        </View>
-      );
-    }
-
     const photo = item.photo;
     const isPending = photo.status === 'Pending' || photo.status === 'Processing';
     const isFailed = photo.status === 'Failed';
@@ -804,21 +760,6 @@ const MyCreationsScreen: React.FC = () => {
 
   // ─── Videos: render items ───
   const renderVideoItem = ({item}: {item: VideoListItem}) => {
-    if (item.type === 'active') {
-      return (
-        <View style={[styles.videoGridItem, {backgroundColor: colors.backgroundTertiary}]}>
-          <View style={[styles.videoGridThumb, {justifyContent: 'center', alignItems: 'center'}]}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-          <View style={styles.videoGridOverlay}>
-            <Text style={styles.videoGridStatus}>
-              {item.job.status === 'pending' ? 'Queued...' : 'Processing...'}
-            </Text>
-          </View>
-        </View>
-      );
-    }
-
     if (item.type === 'failed') {
       return (
         <View style={[styles.videoGridItem, {backgroundColor: colors.backgroundTertiary, borderColor: colors.error, borderWidth: 2}]}>
@@ -987,21 +928,6 @@ const MyCreationsScreen: React.FC = () => {
 
   // ─── Comics: render items ───
   const renderComicItem = ({item}: {item: ComicListItem}) => {
-    if (item.type === 'activeComic') {
-      return (
-        <View style={[styles.gridItem, {backgroundColor: colors.backgroundTertiary}]}>
-          <View style={[styles.gridImage, {justifyContent: 'center', alignItems: 'center'}]}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-          <View style={[styles.gridOverlay, {backgroundColor: 'rgba(0,0,0,0.5)'}]}>
-            <Text style={styles.gridLabel} numberOfLines={1}>
-              {item.job.status === 'pending' ? 'Queued...' : 'Processing...'}
-            </Text>
-          </View>
-        </View>
-      );
-    }
-
     const comic = item.comic;
     const isPending = comic.status === 'Pending' || comic.status === 'Processing';
     const isFailed = comic.status === 'Failed';
@@ -1125,7 +1051,7 @@ const MyCreationsScreen: React.FC = () => {
 
   // ─── Comics tab content ───
   const renderComicsTab = () => {
-    if (isLoadingComics && comics.length === 0 && activeComicJobs.length === 0) {
+    if (isLoadingComics && comics.length === 0) {
       return (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -1134,7 +1060,7 @@ const MyCreationsScreen: React.FC = () => {
       );
     }
 
-    if (comics.length === 0 && activeComicJobs.length === 0) {
+    if (comics.length === 0) {
       return (
         <View style={styles.emptyContainer}>
           <View style={[styles.emptyIconContainer, {backgroundColor: colors.primary + '15'}]}>
@@ -1155,7 +1081,7 @@ const MyCreationsScreen: React.FC = () => {
           data={comicListData}
           extraData={[isSelectionMode, selectedComicIds]}
           renderItem={renderComicItem}
-          keyExtractor={item => item.type === 'activeComic' ? `comic-job-${item.job.comicId}` : item.comic.id}
+          keyExtractor={item => item.comic.id}
           numColumns={3}
           contentContainerStyle={styles.gridContent}
           columnWrapperStyle={styles.gridRow}
@@ -1189,7 +1115,7 @@ const MyCreationsScreen: React.FC = () => {
 
   // ─── Photos tab content ───
   const renderPhotosTab = () => {
-    if (isLoadingPhotos && photos.length === 0 && activeImageJobs.length === 0) {
+    if (isLoadingPhotos && photos.length === 0) {
       return (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -1215,7 +1141,7 @@ const MyCreationsScreen: React.FC = () => {
       );
     }
 
-    if (photos.length === 0 && activeImageJobs.length === 0) {
+    if (photos.length === 0) {
       return (
         <View style={styles.emptyContainer}>
           <View style={[styles.emptyIconContainer, {backgroundColor: colors.primary + '15'}]}>
@@ -1236,7 +1162,7 @@ const MyCreationsScreen: React.FC = () => {
           data={photoListData}
           extraData={[viewedPhotoIds, isSelectionMode, selectedPhotoIds]}
           renderItem={renderPhotoItem}
-          keyExtractor={item => item.type === 'activeImage' ? `img-job-${item.job.photoId}` : item.photo.id}
+          keyExtractor={item => item.photo.id}
           numColumns={3}
           contentContainerStyle={styles.gridContent}
           columnWrapperStyle={styles.gridRow}

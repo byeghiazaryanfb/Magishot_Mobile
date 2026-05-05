@@ -24,13 +24,25 @@ import OnboardingScreen from './src/screens/OnboardingScreen';
 import PaywallScreen from './src/screens/PaywallScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import AccountDeletedScreen from './src/screens/AccountDeletedScreen';
-import {OnboardingStorage, AuthStorage, WelcomeStorage} from './src/utils/storage';
+import {OnboardingStorage, AuthStorage} from './src/utils/storage';
 import {initializeAuth, clearAuth, updateTokens} from './src/store/slices/authSlice';
 import {fetchVideoGallery, resetGallery, clearStaleJobs} from './src/store/slices/videoNotificationSlice';
 import {clearStaleImageJobs} from './src/store/slices/imageNotificationSlice';
 import {fetchUnreadCounts, setAccountDeleted} from './src/store/slices/appSlice';
 import {fetchNotificationUnreadCount} from './src/store/slices/notificationSlice';
+import {
+  clearSubscription,
+  setCustomerInfo,
+} from './src/store/slices/subscriptionSlice';
+import {
+  configurePurchases,
+  loginPurchasesUser,
+  logoutPurchasesUser,
+  addCustomerInfoListener,
+} from './src/services/purchases';
+import {notifySubscriptionPurchase} from './src/services/coinBalanceApi';
 import api from './src/services/api';
+import CustomDialog from './src/components/CustomDialog';
 import SignalRListener from './src/components/SignalRListener';
 import InAppNotificationBanner from './src/components/InAppNotificationBanner';
 import {navigationRef} from './src/navigation/navigationRef';
@@ -218,26 +230,15 @@ function AppContent() {
   const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(true);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(true);
   const [showPaywall, setShowPaywall] = useState(false);
+  const [subRequiredMessage, setSubRequiredMessage] = useState<string | null>(null);
   const accountDeleted = useAppSelector(state => state.app.accountDeleted);
 
   // Minimum 5 second delay with smooth progress animation
   const SPLASH_DURATION = 5000; // 5 seconds
 
-  // Check if this is the first launch on this device
+  // Always show the splash on every app entry
   useEffect(() => {
-    (async () => {
-      const seen = await WelcomeStorage.hasSeenWelcome();
-      if (seen) {
-        // Not first launch — skip splash entirely
-        setIsFirstLaunch(false);
-        setMinDelayComplete(true);
-        setLoadingProgress(1);
-      } else {
-        // First launch — show splash and mark as seen
-        setIsFirstLaunch(true);
-        await WelcomeStorage.setWelcomeSeen();
-      }
-    })();
+    setIsFirstLaunch(true);
   }, []);
 
   // Smooth progress animation over 5 seconds (only on first launch)
@@ -314,12 +315,41 @@ function AppContent() {
         AuthStorage.clearAuthData();
       },
     );
+    // When the backend rejects a spend with errorCode "subscription_required",
+    // show one global prompt explaining that coins are saved on the account
+    // and prompting the user to resubscribe.
+    api.setOnSubscriptionRequired(message => {
+      setSubRequiredMessage(message);
+    });
   }, [dispatch]);
 
   // Initialize auth from storage on mount
   useEffect(() => {
     dispatch(initializeAuth());
   }, [dispatch]);
+
+  // Initialize RevenueCat once on mount
+  useEffect(() => {
+    configurePurchases();
+    const unsubscribe = addCustomerInfoListener(info => {
+      dispatch(setCustomerInfo(info));
+    });
+    return unsubscribe;
+  }, [dispatch]);
+
+  // Sync RevenueCat user identity with app auth
+  const currentUserId = useAppSelector(state => state.auth.userId);
+  useEffect(() => {
+    (async () => {
+      if (isAuthenticated && currentUserId) {
+        const info = await loginPurchasesUser(currentUserId);
+        if (info) dispatch(setCustomerInfo(info));
+      } else if (!isAuthenticated) {
+        await logoutPurchasesUser();
+        dispatch(clearSubscription());
+      }
+    })();
+  }, [isAuthenticated, currentUserId, dispatch]);
 
   // Fetch gallery and unread counts once authenticated
   useEffect(() => {
@@ -383,9 +413,21 @@ function AppContent() {
     setShowPaywall(false);
   };
 
-  const handlePurchase = (planId: string) => {
-    console.log('Purchase plan:', planId);
-    // TODO: Implement purchase logic
+  const handlePurchase = async (
+    productIdentifier: string,
+    isTrial: boolean,
+    coinsToGrant: number,
+  ) => {
+    console.log('[App] Purchase completed:', {productIdentifier, isTrial, coinsToGrant});
+    try {
+      const token = store.getState().auth.accessToken;
+      if (token) {
+        await notifySubscriptionPurchase(token, productIdentifier, isTrial, coinsToGrant);
+      }
+    } catch (err) {
+      // Non-fatal — RevenueCat webhook is the fallback grant mechanism.
+      console.warn('[App] Purchase notification failed:', err);
+    }
     setShowPaywall(false);
   };
 
@@ -451,6 +493,31 @@ function AppContent() {
   return (
     <View style={styles.appContainer}>
       {renderContent()}
+      <CustomDialog
+        visible={subRequiredMessage !== null}
+        icon="lock-closed-outline"
+        iconColor="#FFD700"
+        title="Subscription Expired"
+        message={
+          'Your coins are saved on your account, but you need an active subscription to use them. Resubscribe to unlock spending.'
+        }
+        buttons={[
+          {
+            text: 'Later',
+            onPress: () => setSubRequiredMessage(null),
+            style: 'cancel',
+          },
+          {
+            text: 'Subscribe',
+            onPress: () => {
+              setSubRequiredMessage(null);
+              setShowPaywall(true);
+            },
+            style: 'default',
+          },
+        ]}
+        onClose={() => setSubRequiredMessage(null)}
+      />
     </View>
   );
 }

@@ -28,6 +28,8 @@ import {useAppDispatch, useAppSelector} from '../store/hooks';
 import {loginUser, externalLogin, clearError} from '../store/slices/authSlice';
 import ForgotPasswordModal from '../components/ForgotPasswordModal';
 import Logo from '../components/Logo';
+import SocialSignInTermsModal from '../components/SocialSignInTermsModal';
+import type {ExternalLoginRequest} from '../types';
 
 interface LoginScreenProps {
   onNavigateToRegister: () => void;
@@ -53,6 +55,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onNavigateToRegister, onBack})
     title: string;
     message: string;
   }>({visible: false, title: '', message: ''});
+  const [pendingExternalAuth, setPendingExternalAuth] = useState<{
+    provider: 'google' | 'apple';
+    idToken: string;
+    fullName: string;
+  } | null>(null);
 
   const showError = (title: string, message: string) => {
     setErrorDialog({visible: true, title, message});
@@ -90,6 +97,41 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onNavigateToRegister, onBack})
     );
   };
 
+  const isTermsRequiredError = (err: unknown): boolean => {
+    const msg = typeof err === 'string' ? err : (err as any)?.message || '';
+    return /must accept.*(terms|privacy)/i.test(msg);
+  };
+
+  const attemptExternalLogin = async (
+    provider: 'google' | 'apple',
+    idToken: string,
+    fullName: string,
+    withTerms = false,
+  ) => {
+    const payload: ExternalLoginRequest = {
+      provider,
+      idToken,
+      fullName,
+      termsAccepted: withTerms,
+      privacyPolicyAccepted: withTerms,
+    };
+    try {
+      await dispatch(externalLogin(payload)).unwrap();
+      setPendingExternalAuth(null);
+    } catch (backendErr: any) {
+      if (!withTerms && isTermsRequiredError(backendErr)) {
+        setPendingExternalAuth({provider, idToken, fullName});
+        return;
+      }
+      const message =
+        typeof backendErr === 'string'
+          ? backendErr
+          : backendErr?.message ||
+            `Failed to sign in with ${provider === 'apple' ? 'Apple' : 'Google'}. Please try again.`;
+      showError('Sign-In Error', message);
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     try {
       await GoogleSignin.hasPlayServices();
@@ -97,13 +139,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onNavigateToRegister, onBack})
 
       if (response.data?.idToken) {
         const fullName = response.data.user.name || response.data.user.email || '';
-        dispatch(
-          externalLogin({
-            provider: 'google',
-            idToken: response.data.idToken,
-            fullName: fullName,
-          }),
-        );
+        await attemptExternalLogin('google', response.data.idToken, fullName);
       }
     } catch (err: any) {
       if (err.code !== 'SIGN_IN_CANCELLED') {
@@ -130,13 +166,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onNavigateToRegister, onBack})
               appleAuthResponse.fullName.familyName || ''
             }`.trim()
           : '';
-
-        dispatch(
-          externalLogin({
-            provider: 'apple',
-            idToken: appleAuthResponse.identityToken || '',
-            fullName: fullName || appleAuthResponse.email || '',
-          }),
+        await attemptExternalLogin(
+          'apple',
+          appleAuthResponse.identityToken || '',
+          fullName || appleAuthResponse.email || '',
         );
       }
     } catch (err: any) {
@@ -145,6 +178,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onNavigateToRegister, onBack})
         showError('Error', 'Apple Sign-In failed. Please try again.');
       }
     }
+  };
+
+  const handleAcceptTerms = async () => {
+    if (!pendingExternalAuth) return;
+    const {provider, idToken, fullName} = pendingExternalAuth;
+    await attemptExternalLogin(provider, idToken, fullName, true);
+  };
+
+  const handleCancelTerms = () => {
+    setPendingExternalAuth(null);
   };
 
   const renderContent = () => (
@@ -349,6 +392,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onNavigateToRegister, onBack})
         onClose={() => setShowForgotPassword(false)}
       />
 
+      <SocialSignInTermsModal
+        visible={!!pendingExternalAuth}
+        providerLabel={
+          pendingExternalAuth?.provider === 'apple' ? 'Apple' : 'Google'
+        }
+        isLoading={isLoading}
+        onAccept={handleAcceptTerms}
+        onCancel={handleCancelTerms}
+      />
+
       {/* Error Dialog Overlay */}
       {errorDialog.visible && (
         <TouchableWithoutFeedback onPress={hideErrorDialog}>
@@ -415,6 +468,7 @@ const styles = StyleSheet.create({
   },
   scrollContentTablet: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 0,
   },
   formContainer: {

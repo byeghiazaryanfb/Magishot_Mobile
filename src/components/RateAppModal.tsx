@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import InAppReview from 'react-native-in-app-review';
 import {useTheme} from '../theme/ThemeContext';
 
 interface RateAppModalProps {
@@ -28,18 +29,28 @@ const RateAppModal: React.FC<RateAppModalProps> = ({visible, onClose}) => {
     setRating(star);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (rating >= 4) {
-      // Good rating - redirect to app store
-      openAppStore();
+      await requestReview();
     }
     setSubmitted(true);
   };
 
+  const requestReview = async () => {
+    if (InAppReview.isAvailable()) {
+      try {
+        await InAppReview.RequestInAppReview();
+        return;
+      } catch {
+        // Fall through to store URL
+      }
+    }
+    openAppStore();
+  };
+
   const openAppStore = () => {
-    // Replace with your actual app store IDs
-    const iosAppId = 'your-ios-app-id';
-    const androidPackage = 'com.everhome.app';
+    const iosAppId = '6763151949';
+    const androidPackage = 'com.everhomemobileapp';
 
     if (Platform.OS === 'ios') {
       Linking.openURL(`https://apps.apple.com/app/id${iosAppId}?action=write-review`);

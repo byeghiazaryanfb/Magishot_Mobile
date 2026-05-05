@@ -18,7 +18,7 @@ import GradientButton from '../components/GradientButton';
 import CustomDialog from '../components/CustomDialog';
 import RNFetchBlob from 'rn-fetch-blob';
 import {CameraRoll} from '@react-native-camera-roll/camera-roll';
-import {requestPhotoLibraryPermission} from '../utils/permissions';
+import {requestPhotoLibraryPermissionDetailed, saveToCameraRoll} from '../utils/permissions';
 
 interface VideoResult {
   videoUrl: string;
@@ -83,8 +83,9 @@ const VideoResultScreen: React.FC = () => {
     try {
       setIsSaving(true);
 
-      const hasPermission = await requestPhotoLibraryPermission();
-      if (!hasPermission) {
+      const permission = await requestPhotoLibraryPermissionDetailed();
+      if (permission === 'cancelled') return;
+      if (permission === 'denied') {
         setDialog({
           visible: true,
           icon: 'lock-closed',
@@ -110,10 +111,10 @@ const VideoResultScreen: React.FC = () => {
         }).fetch('GET', videoResult.videoUrl);
 
         // Save to camera roll
-        await CameraRoll.saveAsset(res.path(), {type: 'video'});
+        await saveToCameraRoll(res.path(), {type: 'video'});
 
-        // Clean up cache file
-        await fs.unlink(res.path());
+        // Cleanup is best-effort — saveAsset may have already moved/imported the file.
+        await fs.unlink(res.path()).catch(() => {});
 
         setDialog({
           visible: true,

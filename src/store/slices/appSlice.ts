@@ -5,6 +5,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import api from '../../services/api';
 import type { RootState } from '../index';
+import { deleteAccount } from './authSlice';
 
 interface UnreadResponse {
   unopenedPhotosCount: number;
@@ -89,6 +90,12 @@ const appSlice = createSlice({
       state.unopenedPhotosCount = action.payload.unopenedPhotosCount;
       state.unplayedVideosCount = action.payload.unplayedVideosCount;
       state.unviewedComicsCount = action.payload.unviewedComicsCount ?? 0;
+    });
+    // Atomically show the AccountDeleted screen in the same render that clears auth.
+    // Prevents a brief AuthNavigator flash between deleteAccount.fulfilled and a
+    // follow-up setAccountDeleted(true) dispatch.
+    builder.addCase(deleteAccount.fulfilled, state => {
+      state.accountDeleted = true;
     });
   },
 });

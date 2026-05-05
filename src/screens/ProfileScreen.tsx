@@ -9,17 +9,22 @@ import {
   ActivityIndicator,
   TouchableWithoutFeedback,
   Modal,
+  Alert,
+  Linking,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
 import {useTheme} from '../theme/ThemeContext';
 import {useAppSelector, useAppDispatch} from '../store/hooks';
-import {logoutUser, fetchUserInfo} from '../store/slices/authSlice';
+import {logoutUser, fetchUserInfo, fetchCoinBalance} from '../store/slices/authSlice';
 import EditProfileModal from '../components/EditProfileModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import PaywallScreen from './PaywallScreen';
 import {config} from '../utils/config';
+import {useIsPro} from '../hooks/useSubscription';
+
+const MANAGE_SUBSCRIPTION_URL = 'https://apps.apple.com/account/subscriptions';
 
 interface ProfileOptionProps {
   icon: string;
@@ -66,6 +71,7 @@ const ProfileScreen: React.FC = () => {
   const navigation = useNavigation();
   const {colors} = useTheme();
   const dispatch = useAppDispatch();
+  const isPro = useIsPro();
   const {
     username,
     email,
@@ -78,12 +84,16 @@ const ProfileScreen: React.FC = () => {
     coinBalance,
   } = useAppSelector(state => state.auth);
 
-  // Fetch user info on mount
-  useEffect(() => {
-    if (accessToken) {
-      dispatch(fetchUserInfo(accessToken));
-    }
-  }, [accessToken, dispatch]);
+  // Refresh coin balance + user info every time this screen comes into focus
+  // (not just on mount) so the balance is always up-to-date.
+  useFocusEffect(
+    React.useCallback(() => {
+      if (accessToken) {
+        dispatch(fetchCoinBalance(accessToken));
+        dispatch(fetchUserInfo(accessToken));
+      }
+    }, [accessToken, dispatch]),
+  );
 
   // State for modals
   const [showEditModal, setShowEditModal] = useState(false);
@@ -194,16 +204,41 @@ const ProfileScreen: React.FC = () => {
   };
 
   const handleDeleteAccount = () => {
-    showConfirm(
-      'Delete Account',
-      'Are you sure you want to delete your account? This action cannot be undone.',
-      'Delete',
-      () => {
-        hideConfirmDialog();
-        showInfo('Coming Soon', 'Account deletion will be available soon.', 'time-outline');
-      },
-      true,
+    // Always warn the user about Apple billing before deleting. We cannot
+    // reliably detect every active subscription state from the app (RevenueCat
+    // cache can lag behind Apple), and Apple does not allow apps to cancel
+    // subscriptions programmatically — the user must do it themselves in the
+    // App Store. So we show the unsubscribe instructions every time and let
+    // the user decide.
+    Alert.alert(
+      'Cancel Subscription First',
+      'Deleting your account will NOT automatically cancel any active subscription — Apple will continue to charge you (including converting a free trial to a paid plan).\n\nIf you have a subscription, please cancel it in the App Store first, then come back to delete your account.',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Manage Subscription',
+          onPress: () => {
+            Linking.openURL(MANAGE_SUBSCRIPTION_URL).catch(() => {
+              Alert.alert(
+                'Open App Store',
+                'Go to Settings → [your name] → Subscriptions to cancel your plan.',
+              );
+            });
+          },
+        },
+        {
+          text: 'Delete Anyway',
+          style: 'destructive',
+          onPress: confirmDeleteAccount,
+        },
+      ],
     );
+  };
+
+  const confirmDeleteAccount = () => {
+    hideConfirmDialog();
+    // TODO: call DELETE /api/users/me then dispatch(clearAuth()) + clear storage
+    showInfo('Coming Soon', 'Account deletion will be available soon.', 'time-outline');
   };
 
   const openLegalContent = async (type: 'terms' | 'privacy') => {
@@ -354,19 +389,28 @@ const ProfileScreen: React.FC = () => {
           )}
           <View style={[styles.subscriptionCard, {backgroundColor: colors.cardBackground}]}>
             <View style={styles.subscriptionLeft}>
-              <View style={[styles.planBadge, {backgroundColor: colors.warning + '20'}]}>
-                <Ionicons name="star" size={16} color={colors.warning} />
-                <Text style={[styles.planBadgeText, {color: colors.warning}]}>Free Plan</Text>
-              </View>
+              {isPro ? (
+                <View style={[styles.planBadge, {backgroundColor: colors.primary + '20'}]}>
+                  <Ionicons name="star" size={16} color={colors.primary} />
+                  <Text style={[styles.planBadgeText, {color: colors.primary}]}>Pro Plan</Text>
+                </View>
+              ) : (
+                <View style={[styles.planBadge, {backgroundColor: colors.warning + '20'}]}>
+                  <Ionicons name="star" size={16} color={colors.warning} />
+                  <Text style={[styles.planBadgeText, {color: colors.warning}]}>Free Plan</Text>
+                </View>
+              )}
               <Text style={[styles.subscriptionDesc, {color: colors.textSecondary}]}>
-                Upgrade to unlock all features
+                {isPro ? 'Manage or switch your plan' : 'Upgrade to unlock all features'}
               </Text>
             </View>
             <TouchableOpacity
-              style={[styles.upgradeButton, {backgroundColor: colors.primary}]}
+              style={[styles.upgradeButton, {backgroundColor: isPro ? colors.backgroundTertiary : colors.primary}]}
               activeOpacity={0.8}
               onPress={() => setShowPaywall(true)}>
-              <Text style={styles.upgradeButtonText}>Upgrade</Text>
+              <Text style={[styles.upgradeButtonText, {color: isPro ? colors.textSecondary : '#fff'}]}>
+                {isPro ? 'Manage' : 'Upgrade'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -502,8 +546,8 @@ const ProfileScreen: React.FC = () => {
         <View style={styles.paywallOverlay}>
           <PaywallScreen
             onClose={() => setShowPaywall(false)}
-            onPurchase={(planId) => {
-              console.log('Purchase plan:', planId);
+            onPurchase={(planId, isTrial, coinsToGrant) => {
+              console.log('Purchase plan:', planId, 'isTrial:', isTrial, 'coinsToGrant:', coinsToGrant);
               setShowPaywall(false);
             }}
           />

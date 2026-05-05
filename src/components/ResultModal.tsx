@@ -26,7 +26,7 @@ import {addToHistory} from '../store/slices/historySlice';
 import {useTheme} from '../theme/ThemeContext';
 import {GeneratedImage} from '../services/imageTransform';
 import ZoomableImage from './ZoomableImage';
-import {requestPhotoLibraryPermission} from '../utils/permissions';
+import {requestPhotoLibraryPermissionDetailed, saveToCameraRoll} from '../utils/permissions';
 
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
@@ -152,8 +152,9 @@ const ResultModal: React.FC = () => {
     }
 
     try {
-      const hasPermission = await requestPhotoLibraryPermission();
-      if (!hasPermission) {
+      const permission = await requestPhotoLibraryPermissionDetailed();
+      if (permission === 'cancelled') return;
+      if (permission === 'denied') {
         showDialog('warning', 'Permission Denied', 'Cannot save without permission');
         return;
       }
@@ -170,8 +171,9 @@ const ResultModal: React.FC = () => {
         throw new Error('Failed to download image');
       }
 
-      await CameraRoll.saveAsset(`file://${filePath}`, {type: 'photo'});
-      await RNFS.unlink(filePath);
+      await saveToCameraRoll(`file://${filePath}`, {type: 'photo'});
+      // Cleanup is best-effort — saveAsset may have already moved/imported the file.
+      await RNFS.unlink(filePath).catch(() => {});
 
       showDialog('success', 'Saved!', 'Photo saved to your gallery');
     } catch (error) {

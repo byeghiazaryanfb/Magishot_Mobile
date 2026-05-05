@@ -19,7 +19,7 @@ import RNFS from 'react-native-fs';
 import {useTheme} from '../theme/ThemeContext';
 import CustomDialog from './CustomDialog';
 import {useAppSelector} from '../store/hooks';
-import {requestPhotoLibraryPermission} from '../utils/permissions';
+import {requestPhotoLibraryPermissionDetailed, saveToCameraRoll} from '../utils/permissions';
 
 interface AnimateResultModalProps {
   visible: boolean;
@@ -107,8 +107,12 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
           path: cachePath,
         }).fetch('GET', videoResult.videoUrl);
 
-        const hasPermission = await requestPhotoLibraryPermission();
-        if (!hasPermission) {
+        const permission = await requestPhotoLibraryPermissionDetailed();
+        if (permission === 'cancelled') {
+          await fs.unlink(res.path()).catch(() => {});
+          return;
+        }
+        if (permission === 'denied') {
           setDialog({
             visible: true,
             icon: 'lock-closed',
@@ -117,12 +121,13 @@ const AnimateResultModal: React.FC<AnimateResultModalProps> = ({
             message: 'Please allow photo library access in Settings to save videos.',
             type: 'permission',
           });
-          await fs.unlink(res.path());
+          await fs.unlink(res.path()).catch(() => {});
           return;
         }
 
-        await CameraRoll.saveAsset(res.path(), {type: 'video'});
-        await fs.unlink(res.path());
+        await saveToCameraRoll(res.path(), {type: 'video'});
+        // Cleanup is best-effort — saveAsset may have already moved/imported the file.
+        await fs.unlink(res.path()).catch(() => {});
 
         setDialog({
           visible: true,

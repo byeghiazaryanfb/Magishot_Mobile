@@ -12,6 +12,7 @@ import videoNotificationReducer from './slices/videoNotificationSlice';
 import imageNotificationReducer from './slices/imageNotificationSlice';
 import notificationReducer from './slices/notificationSlice';
 import comicNotificationReducer from './slices/comicNotificationSlice';
+import subscriptionReducer from './slices/subscriptionSlice';
 
 export const store = configureStore({
   reducer: {
@@ -24,13 +25,11 @@ export const store = configureStore({
     imageNotification: imageNotificationReducer,
     notification: notificationReducer,
     comicNotification: comicNotificationReducer,
+    subscription: subscriptionReducer,
   },
   middleware: getDefaultMiddleware =>
     getDefaultMiddleware({
-      serializableCheck: {
-        // Ignore these action types
-        ignoredActions: ['persist/PERSIST'],
-      },
+      serializableCheck: false,
     }),
 });
 

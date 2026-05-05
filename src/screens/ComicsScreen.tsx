@@ -36,8 +36,9 @@ import type {RootState} from '../store';
 import {useAppDispatch} from '../store/hooks';
 import {addPendingComicJob} from '../store/slices/comicNotificationSlice';
 import {fetchCoinBalance} from '../store/slices/authSlice';
+import {fetchUnreadCounts} from '../store/slices/appSlice';
 import {useServicePrices} from '../hooks/useServicePrices';
-import {requestPhotoLibraryPermission} from '../utils/permissions';
+import {requestPhotoLibraryPermissionDetailed, saveToCameraRoll} from '../utils/permissions';
 import AiConsentDialog from '../components/AiConsentDialog';
 import {useAiConsent} from '../hooks/useAiConsent';
 
@@ -145,8 +146,9 @@ const ComicsScreen: React.FC = () => {
   const handleSave = async () => {
     if (!comic) return;
     try {
-      const hasPermission = await requestPhotoLibraryPermission();
-      if (!hasPermission) {
+      const permission = await requestPhotoLibraryPermissionDetailed();
+      if (permission === 'cancelled') return;
+      if (permission === 'denied') {
         showMessage('error', 'Permission Denied', 'Cannot save without photo library permission');
         return;
       }
@@ -154,7 +156,7 @@ const ComicsScreen: React.FC = () => {
       const filePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
       const downloadResult = await RNFS.downloadFile({fromUrl: comic.fullUrl, toFile: filePath}).promise;
       if (downloadResult.statusCode !== 200) throw new Error('Download failed');
-      await CameraRoll.saveAsset(`file://${filePath}`, {type: 'photo'});
+      await saveToCameraRoll(`file://${filePath}`, {type: 'photo'});
       await RNFS.unlink(filePath).catch(() => {});
       showMessage('success', 'Saved!', 'Comic saved to your photo gallery');
     } catch {
@@ -190,6 +192,7 @@ const ComicsScreen: React.FC = () => {
     setIsDeleting(true);
     try {
       await deleteComic(comic.id, accessToken);
+      dispatch(fetchUnreadCounts());
       setDeleteDialogVisible(false);
       showMessage('success', 'Deleted', 'Comic deleted successfully');
       // Go back to upload state after brief delay

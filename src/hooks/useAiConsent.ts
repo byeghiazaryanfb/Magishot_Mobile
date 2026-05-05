@@ -4,18 +4,16 @@ import {AiConsentStorage} from '../utils/storage';
 
 /**
  * Hook that gates AI generation behind a one-time consent dialog.
+ * Once the user accepts, the choice is persisted per-account and the dialog
+ * is never shown again on subsequent generations.
  *
  * Usage:
- *   const { requireConsent, consentDialog } = useAiConsent();
+ *   const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
  *
  *   const handleGenerate = async () => {
- *     const allowed = await requireConsent();
- *     if (!allowed) return;
+ *     if (!(await requireConsent())) return;
  *     // ... proceed with generation
  *   };
- *
- *   // Render consentDialog in JSX (it manages its own visibility)
- *   return <>{consentDialog}</>
  */
 export function useAiConsent() {
   const email = useAppSelector(state => state.auth.email);

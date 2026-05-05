@@ -1,5 +1,6 @@
 import React, {useEffect, useRef} from 'react';
 import {View, Text, StyleSheet, Animated, TouchableOpacity} from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import Logo from '../components/Logo';
@@ -65,59 +66,60 @@ const AccountDeletedScreen: React.FC<AccountDeletedScreenProps> = ({onContinue})
       <View style={[styles.decorCircle, styles.decorCircle1]} />
       <View style={[styles.decorCircle, styles.decorCircle2]} />
 
-      <View style={styles.content}>
-        {/* Animated wave icon */}
-        <Animated.View
-          style={[
-            styles.iconContainer,
-            {transform: [{scale: Animated.multiply(iconScale, heartAnim)}]},
-          ]}>
-          <LinearGradient
-            colors={['#FF1B6D', '#FF758C']}
-            style={styles.iconGradient}>
-            <Ionicons name="hand-left-outline" size={48} color="#fff" />
-          </LinearGradient>
-        </Animated.View>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.content}>
+          <View style={styles.centerGroup}>
+            {/* Animated wave icon */}
+            <Animated.View
+              style={[
+                styles.iconContainer,
+                {transform: [{scale: Animated.multiply(iconScale, heartAnim)}]},
+              ]}>
+              <LinearGradient
+                colors={['#FF1B6D', '#FF758C']}
+                style={styles.iconGradient}>
+                <Ionicons name="sad-outline" size={56} color="#fff" />
+              </LinearGradient>
+            </Animated.View>
 
-        {/* Message content */}
-        <Animated.View
-          style={{
-            opacity: fadeAnim,
-            transform: [{translateY: slideAnim}],
-            alignItems: 'center',
-          }}>
-          <Text style={styles.title}>We're sad to see you go</Text>
-          <Text style={styles.message}>
-            Your account and all associated data have been permanently deleted.
-          </Text>
-          <Text style={styles.submessage}>
-            Thank you for being part of the MagiShot community.
-            {'\n'}We hope to see you again someday.
-          </Text>
+            {/* Message content */}
+            <Animated.View
+              style={[
+                styles.messageBlock,
+                {
+                  opacity: fadeAnim,
+                  transform: [{translateY: slideAnim}],
+                },
+              ]}>
+              <Text style={styles.title}>We're sad to see you go</Text>
+              <Text style={styles.message}>
+                Your account and all associated data have been permanently
+                deleted.
+              </Text>
+              <Text style={styles.submessage}>
+                Thank you for being part of the MagiShot community.
+                {'\n'}We hope to see you again someday.
+              </Text>
 
-          {/* Divider */}
-          <View style={styles.divider} />
+              <View style={styles.divider} />
+            </Animated.View>
+          </View>
 
-          {/* CTA */}
-          <TouchableOpacity
-            style={styles.button}
-            onPress={onContinue}
-            activeOpacity={0.8}>
-            <LinearGradient
-              colors={['#FF1B6D', '#FF758C']}
-              start={{x: 0, y: 0}}
-              end={{x: 1, y: 0}}
-              style={styles.buttonGradient}>
-              <Text style={styles.buttonText}>Got it</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </Animated.View>
+          {/* Bottom: button + logo */}
+          <Animated.View style={[styles.bottom, {opacity: fadeAnim}]}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={onContinue}
+              style={styles.button}>
+              <Text style={styles.buttonText}>Return to sign-in</Text>
+            </TouchableOpacity>
 
-        {/* Logo at bottom */}
-        <Animated.View style={[styles.logoContainer, {opacity: fadeAnim}]}>
-          <Logo size={80} showBorder={false} />
-        </Animated.View>
-      </View>
+            <View style={styles.logoContainer}>
+              <Logo size={120} showBorder={false} />
+            </View>
+          </Animated.View>
+        </View>
+      </SafeAreaView>
     </LinearGradient>
   );
 };
@@ -143,14 +145,22 @@ const styles = StyleSheet.create({
     bottom: 60,
     left: -60,
   },
+  safeArea: {
+    flex: 1,
+  },
   content: {
+    flex: 1,
+    paddingHorizontal: 32,
+    paddingBottom: 32,
+  },
+  centerGroup: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
   },
   iconContainer: {
-    marginBottom: 32,
+    marginBottom: 28,
+    alignItems: 'center',
   },
   iconGradient: {
     width: 100,
@@ -159,50 +169,58 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  messageBlock: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
   title: {
     fontSize: 26,
     fontWeight: '700',
     color: '#fff',
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   message: {
     fontSize: 15,
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.75)',
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   submessage: {
     fontSize: 14,
     color: 'rgba(255,255,255,0.5)',
     textAlign: 'center',
     lineHeight: 21,
+    marginBottom: 28,
   },
   divider: {
     width: 40,
     height: 2,
-    backgroundColor: 'rgba(255, 27, 109, 0.3)',
+    backgroundColor: 'rgba(255, 27, 109, 0.4)',
     borderRadius: 1,
-    marginVertical: 32,
+  },
+  bottom: {
+    paddingTop: 16,
   },
   button: {
-    width: '100%',
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  buttonGradient: {
-    paddingVertical: 16,
+    height: 54,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 27, 109, 0.7)',
+    backgroundColor: 'rgba(255, 27, 109, 0.08)',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
+    color: '#FF4A8A',
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   logoContainer: {
-    position: 'absolute',
-    bottom: 50,
+    alignItems: 'center',
+    paddingTop: 24,
   },
 });
 
