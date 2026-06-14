@@ -55,6 +55,7 @@ import {useAppDispatch} from '../store/hooks';
 import {fetchCoinBalance} from '../store/slices/authSlice';
 import {addToHistory} from '../store/slices/historySlice';
 import Logo from '../components/Logo';
+import ExecutionsBadge from '../components/ExecutionsBadge';
 import PhotoPickerModal from '../components/PhotoPickerModal';
 import {useWalkthrough, WALKTHROUGH_KEYS} from '../hooks/useWalkthrough';
 
@@ -3018,6 +3019,7 @@ const EditScreen: React.FC = () => {
           <Logo size={isTablet ? 140 : 100} />
         </View>
         <View style={styles.headerRight}>
+          <ExecutionsBadge size={themeToggleSize} iconSize={themeIconSize} />
           <TouchableOpacity
             style={[
               styles.headerButton,

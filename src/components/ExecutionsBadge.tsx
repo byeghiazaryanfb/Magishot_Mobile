@@ -34,6 +34,19 @@ const KIND_LABEL: Record<ExecutionRow['kind'], string> = {
   comic: 'Comic',
 };
 
+// Hide jobs from the busy badge once they've been "pending/processing" for
+// longer than this. Generation realistically completes well under 8 minutes;
+// anything older is almost always a job whose SignalR Failed/Ready event was
+// dropped (connection blip, server crash, missed event). Without this guard
+// the spinner spins forever.
+const STALE_AFTER_MS = 8 * 60 * 1000;
+
+const isFresh = (createdAt: string, now: number): boolean => {
+  const t = Date.parse(createdAt);
+  if (Number.isNaN(t)) return true;
+  return now - t < STALE_AFTER_MS;
+};
+
 const KIND_ICON: Record<ExecutionRow['kind'], string> = {
   image: 'image',
   video: 'videocam',
@@ -48,10 +61,21 @@ const ExecutionsBadge: React.FC<ExecutionsBadgeProps> = ({size, iconSize}) => {
   const videoJobs = useAppSelector(state => state.videoNotification.jobs);
   const comicJobs = useAppSelector(state => state.comicNotification.jobs);
 
+  // Re-tick once a minute so stale jobs drop off the badge even if no other
+  // state changes (e.g., SignalR dropped, app still in foreground).
+  const [now, setNow] = useState(() => Date.now());
+  React.useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const executions: ExecutionRow[] = useMemo(() => {
     const rows: ExecutionRow[] = [];
     Object.values(imageJobs as Record<string, ImageJob>).forEach(j => {
-      if (j.status === 'pending' || j.status === 'processing') {
+      if (
+        (j.status === 'pending' || j.status === 'processing') &&
+        isFresh(j.createdAt, now)
+      ) {
         rows.push({
           id: `image-${j.photoId}`,
           kind: 'image',
@@ -61,7 +85,10 @@ const ExecutionsBadge: React.FC<ExecutionsBadgeProps> = ({size, iconSize}) => {
       }
     });
     Object.values(videoJobs as Record<string, VideoJob>).forEach(j => {
-      if (j.status === 'pending' || j.status === 'processing') {
+      if (
+        (j.status === 'pending' || j.status === 'processing') &&
+        isFresh(j.createdAt, now)
+      ) {
         rows.push({
           id: `video-${j.videoId}`,
           kind: 'video',
@@ -71,7 +98,10 @@ const ExecutionsBadge: React.FC<ExecutionsBadgeProps> = ({size, iconSize}) => {
       }
     });
     Object.values(comicJobs as Record<string, ComicJob>).forEach(j => {
-      if (j.status === 'pending' || j.status === 'processing') {
+      if (
+        (j.status === 'pending' || j.status === 'processing') &&
+        isFresh(j.createdAt, now)
+      ) {
         rows.push({
           id: `comic-${j.comicId}`,
           kind: 'comic',
@@ -83,7 +113,7 @@ const ExecutionsBadge: React.FC<ExecutionsBadgeProps> = ({size, iconSize}) => {
     return rows.sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
-  }, [imageJobs, videoJobs, comicJobs]);
+  }, [imageJobs, videoJobs, comicJobs, now]);
 
   const count = executions.length;
 

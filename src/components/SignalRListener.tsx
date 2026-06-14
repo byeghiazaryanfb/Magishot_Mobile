@@ -19,6 +19,7 @@ import {
   setSynthesizeReady,
   setSynthesizeFailed,
   clearAllImageNotifications,
+  reconcilePendingImageJobs,
 } from '../store/slices/imageNotificationSlice';
 import {
   setComicJobProcessing,
@@ -179,12 +180,15 @@ const SignalRListener: React.FC = () => {
           console.log('[SignalR] App foregrounded — reconnecting...');
           notificationService.connect(accessToken);
         }
+        // SignalR events that fired while we were backgrounded are lost on
+        // reconnect — ask the backend for the current state of pending jobs.
+        dispatch(reconcilePendingImageJobs());
       }
       appStateRef.current = nextAppState;
     });
 
     return () => subscription.remove();
-  }, [isAuthenticated, accessToken]);
+  }, [isAuthenticated, accessToken, dispatch]);
 
   // Cleanup on unmount
   useEffect(() => {

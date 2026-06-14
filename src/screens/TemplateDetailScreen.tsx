@@ -28,6 +28,8 @@ import {useAppDispatch, useAppSelector} from '../store/hooks';
 import {addPendingJob} from '../store/slices/videoNotificationSlice';
 import {fetchCoinBalance} from '../store/slices/authSlice';
 import {useAiConsent} from '../hooks/useAiConsent';
+import {useIsPro} from '../hooks/useSubscription';
+import api from '../services/api';
 
 type TemplateDetailRouteProp = RouteProp<RootStackParamList, 'TemplateDetail'>;
 
@@ -72,6 +74,7 @@ const TemplateDetailScreen: React.FC = () => {
   const {template} = route.params;
   const dispatch = useAppDispatch();
   const accessToken = useAppSelector(state => state.auth.accessToken);
+  const isPro = useIsPro();
   const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
 
   const photoCount = template.requiredPhotoCount || template.maxImages;
@@ -145,6 +148,12 @@ const TemplateDetailScreen: React.FC = () => {
   };
 
   const handleGenerate = async () => {
+    if (!isPro) {
+      api.triggerSubscriptionRequired(
+        'An active Pro subscription is required to generate videos.',
+      );
+      return;
+    }
     if (!(await requireConsent())) return;
     if (!canGenerate) {
       Alert.alert(

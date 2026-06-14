@@ -30,6 +30,8 @@ import {fetchCoinBalance} from '../store/slices/authSlice';
 import {useServicePrices} from '../hooks/useServicePrices';
 import AiConsentDialog from '../components/AiConsentDialog';
 import {useAiConsent} from '../hooks/useAiConsent';
+import {useIsPro} from '../hooks/useSubscription';
+import api from '../services/api';
 
 type ImageTemplateDetailRouteProp = RouteProp<RootStackParamList, 'ImageTemplateDetail'>;
 
@@ -49,6 +51,7 @@ const ImageTemplateScreen: React.FC = () => {
   const route = useRoute<ImageTemplateDetailRouteProp>();
   const {template: initialTemplate, templates, currentIndex: initialIndex} = route.params;
   const accessToken = useSelector((state: RootState) => state.auth.accessToken);
+  const isPro = useIsPro();
   const dispatch = useAppDispatch();
   const {animationPrice} = useServicePrices();
   const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
@@ -225,6 +228,12 @@ const ImageTemplateScreen: React.FC = () => {
   };
 
   const handleGenerate = async () => {
+    if (!isPro) {
+      api.triggerSubscriptionRequired(
+        'An active Pro subscription is required to generate images.',
+      );
+      return;
+    }
     if (!(await requireConsent())) return;
     if (!canGenerate) {
       handlePickImage(imageSlots.find(s => !s.uri)?.id ?? 0);

@@ -41,6 +41,8 @@ import {useServicePrices} from '../hooks/useServicePrices';
 import {requestPhotoLibraryPermissionDetailed, saveToCameraRoll} from '../utils/permissions';
 import AiConsentDialog from '../components/AiConsentDialog';
 import {useAiConsent} from '../hooks/useAiConsent';
+import {useIsPro} from '../hooks/useSubscription';
+import api from '../services/api';
 
 const MAX_PHOTOS = 7;
 const HEADER_HEIGHT = 56;
@@ -61,6 +63,7 @@ const ComicsScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<ComicsRouteProp>();
   const accessToken = useSelector((state: RootState) => state.auth.accessToken);
+  const isPro = useIsPro();
   const dispatch = useAppDispatch();
   const {comicPrice} = useServicePrices();
   const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
@@ -227,6 +230,12 @@ const ComicsScreen: React.FC = () => {
   };
 
   const handleGenerate = async () => {
+    if (!isPro) {
+      api.triggerSubscriptionRequired(
+        'An active Pro subscription is required to generate comics.',
+      );
+      return;
+    }
     if (!(await requireConsent())) return;
     if (!canGenerate || !accessToken) return;
 

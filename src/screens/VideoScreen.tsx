@@ -20,6 +20,7 @@ import {config} from '../utils/config';
 import {RootStackParamList} from '../navigation/RootNavigator';
 import GifPlayer from '../components/GifPlayer';
 import Logo from '../components/Logo';
+import ExecutionsBadge from '../components/ExecutionsBadge';
 import PriceBadge from '../components/PriceBadge';
 
 interface VideoTemplate {
@@ -261,6 +262,7 @@ const VideoScreen: React.FC = () => {
         </View>
 
         <View style={styles.headerRight}>
+          <ExecutionsBadge size={themeToggleSize} iconSize={themeIconSize} />
           <TouchableOpacity
             style={[
               styles.headerButton,

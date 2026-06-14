@@ -21,7 +21,7 @@ export const configurePurchases = (): void => {
     console.warn('[Purchases] Missing API key for platform', Platform.OS);
     return;
   }
-  Purchases.setLogLevel(LOG_LEVEL.WARN);
+  Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN);
   Purchases.configure({apiKey});
   configured = true;
 };
@@ -70,12 +70,38 @@ export const refreshCustomerInfo = async (): Promise<CustomerInfo | null> => {
   }
 };
 
+// Captures the result of the last getCurrentOffering() call so the paywall can
+// surface *why* products failed to load — even in a release/TestFlight build
+// where console logs aren't easily visible.
+let lastOfferingDiagnostic = '';
+export const getLastOfferingDiagnostic = (): string => lastOfferingDiagnostic;
+
 export const getCurrentOffering = async (): Promise<PurchasesOffering | null> => {
   try {
     const offerings = await Purchases.getOfferings();
-    return offerings.current ?? offerings.all[OFFERING_DEFAULT] ?? null;
-  } catch (err) {
-    console.warn('[Purchases] getOfferings failed', err);
+    const allKeys = Object.keys(offerings.all ?? {});
+    const chosen = offerings.current ?? offerings.all[OFFERING_DEFAULT] ?? null;
+    lastOfferingDiagnostic =
+      `current=${offerings.current?.identifier ?? 'null'} ` +
+      `all=[${allKeys.join(',')}] ` +
+      `chosen=${chosen?.identifier ?? 'null'} ` +
+      `pkgs=${chosen?.availablePackages.length ?? 0}`;
+    console.log('[Purchases] getOfferings —', lastOfferingDiagnostic);
+    return chosen;
+  } catch (err: any) {
+    // RevenueCat wraps the real StoreKit failure in `underlyingErrorMessage` /
+    // `readableErrorCode` / `userInfo` — surface those, since the top-level
+    // message is just the generic "configuration" wrapper for every code 23.
+    const underlying =
+      err?.underlyingErrorMessage ??
+      err?.userInfo?.readable_error_code ??
+      err?.userInfo?.NSUnderlyingError ??
+      '';
+    lastOfferingDiagnostic =
+      `getOfferings ERROR code=${err?.code ?? '?'} ` +
+      `msg=${err?.message ?? String(err)} ` +
+      `underlying=[${underlying || 'none'}]`;
+    console.warn('[Purchases] getOfferings failed', JSON.stringify(err));
     return null;
   }
 };

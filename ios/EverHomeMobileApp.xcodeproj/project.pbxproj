@@ -28,6 +28,7 @@
 		B003DA8A1C34B62483EB7194 /* libPods-EverHomeMobileApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-EverHomeMobileApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F1B0000000000000000001 /* GoogleService-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "EverHomeMobileApp/GoogleService-Info.plist"; sourceTree = "<group>"; };
+		F1C0000000000000000001 /* MagiShot.storekit */ = {isa = PBXFileReference; lastKnownFileType = file.storekit; name = MagiShot.storekit; path = MagiShot.storekit; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +76,7 @@
 		83CBB9F61A601CBA00E9B192 = {
 			isa = PBXGroup;
 			children = (
+				F1C0000000000000000001 /* MagiShot.storekit */,
 				13B07FAE1A68108700A75B9A /* EverHomeMobileApp */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
@@ -266,7 +268,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = EverHomeMobileApp/EverHomeMobileApp.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = QS3GAQMSCL;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = EverHomeMobileApp/Info.plist;
@@ -275,7 +277,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.5;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -297,7 +299,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = EverHomeMobileApp/EverHomeMobileApp.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = QS3GAQMSCL;
 				INFOPLIST_FILE = EverHomeMobileApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
@@ -305,7 +307,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.5;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
