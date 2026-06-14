@@ -26,8 +26,7 @@ import WelcomeScreen from './src/screens/WelcomeScreen';
 import AccountDeletedScreen from './src/screens/AccountDeletedScreen';
 import {OnboardingStorage, AuthStorage} from './src/utils/storage';
 import {initializeAuth, clearAuth, updateTokens} from './src/store/slices/authSlice';
-import {fetchVideoGallery, resetGallery, clearStaleJobs} from './src/store/slices/videoNotificationSlice';
-import {clearStaleImageJobs} from './src/store/slices/imageNotificationSlice';
+import {fetchVideoGallery, resetGallery} from './src/store/slices/videoNotificationSlice';
 import {fetchUnreadCounts, setAccountDeleted} from './src/store/slices/appSlice';
 import {fetchNotificationUnreadCount} from './src/store/slices/notificationSlice';
 import {
@@ -39,6 +38,7 @@ import {
   loginPurchasesUser,
   logoutPurchasesUser,
   addCustomerInfoListener,
+  refreshCustomerInfo,
 } from './src/services/purchases';
 import {notifySubscriptionPurchase} from './src/services/coinBalanceApi';
 import api from './src/services/api';
@@ -369,12 +369,17 @@ function AppContent() {
         nextAppState === 'active' &&
         isAuthenticated
       ) {
-        dispatch(clearStaleJobs());
-        dispatch(clearStaleImageJobs());
         dispatch(resetGallery());
         dispatch(fetchVideoGallery({}));
         dispatch(fetchUnreadCounts());
         dispatch(fetchNotificationUnreadCount());
+        // Re-sync subscription state on resume. Without this, RevenueCat's
+        // cached customerInfo can be a day stale when the app is reopened,
+        // making isPro briefly false and firing a bogus "Subscription
+        // Expired" prompt even though the user is still subscribed.
+        refreshCustomerInfo().then(info => {
+          if (info) dispatch(setCustomerInfo(info));
+        });
       }
       appState.current = nextAppState;
     });

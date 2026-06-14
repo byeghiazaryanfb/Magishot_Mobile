@@ -22,6 +22,7 @@ import {setCustomerInfo} from '../store/slices/subscriptionSlice';
 import {useIsPro} from '../hooks/useSubscription';
 import {
   getCurrentOffering,
+  getLastOfferingDiagnostic,
   purchasePackage,
   restorePurchases,
   refreshCustomerInfo,
@@ -56,6 +57,8 @@ interface PricingPlan {
   title: string;
   price: string;
   billingPeriod: string;
+  /** Optional effective per-unit rate, e.g. "≈ $3.75/mo" on a yearly plan. */
+  pricePerUnit?: string;
   /** Coins granted when the paid period is active (not during trial). */
   bonusCoins: number;
   /** Coins granted at the start of the free-trial period. */
@@ -75,7 +78,7 @@ const FEATURES = [
 const PRICING_PLANS: PricingPlan[] = [
   {
     id: 'weekly',
-    title: 'Weekly',
+    title: 'Pro Weekly',
     price: '$6.99',
     billingPeriod: 'per week',
     bonusCoins: 700,
@@ -84,16 +87,17 @@ const PRICING_PLANS: PricingPlan[] = [
   },
   {
     id: 'monthly',
-    title: 'Monthly',
+    title: 'Pro Monthly',
     price: '$24.99',
     billingPeriod: 'per month',
     bonusCoins: 2500,
   },
   {
     id: 'yearly',
-    title: 'Yearly',
+    title: 'Pro Yearly',
     price: '$44.99',
     billingPeriod: 'per year',
+    pricePerUnit: '≈ $3.75/mo',
     bonusCoins: 5000,
     isPopular: true,
   },
@@ -110,13 +114,14 @@ const PaywallScreen: React.FC<PaywallScreenProps> = ({onClose, onPurchase}) => {
   const dispatch = useAppDispatch();
   const isPro = useIsPro();
   const customerInfo = useAppSelector(state => state.subscription.customerInfo);
-  const [selectedPlan, setSelectedPlan] = useState<PricingPlan['id']>('yearly');
+  const [selectedPlan, setSelectedPlan] = useState<PricingPlan['id']>('weekly');
   const [legalModal, setLegalModal] = useState<{visible: boolean; type: 'terms' | 'privacy'}>({
     visible: false,
     type: 'terms',
   });
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
   const [offeringsLoaded, setOfferingsLoaded] = useState(false);
+  const [offeringDiag, setOfferingDiag] = useState('');
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
 
@@ -125,8 +130,18 @@ const PaywallScreen: React.FC<PaywallScreenProps> = ({onClose, onPurchase}) => {
     (async () => {
       const offering = await getCurrentOffering();
       if (cancelled) return;
-      setPackages(offering?.availablePackages ?? []);
+      const pkgs = offering?.availablePackages ?? [];
+      setPackages(pkgs);
       setOfferingsLoaded(true);
+      const diag = `${getLastOfferingDiagnostic()}${
+        pkgs.length
+          ? ` types=[${pkgs
+              .map(p => `${p.packageType}:${p.product.identifier}`)
+              .join(', ')}]`
+          : ''
+      }`;
+      setOfferingDiag(diag);
+      console.log('[Paywall] Offering loaded —', diag);
     })();
     return () => {
       cancelled = true;
@@ -196,9 +211,12 @@ const PaywallScreen: React.FC<PaywallScreenProps> = ({onClose, onPurchase}) => {
         'packages:',
         packages.map(p => ({id: p.identifier, type: p.packageType})),
       );
+      // NOTE: diagnostic text is shown in all builds temporarily so we can
+      // read the real offering state from TestFlight/production. Revert to the
+      // generic user-facing message once the production paywall is confirmed.
       Alert.alert(
         'Plan unavailable',
-        'This subscription is not available right now. Please try again later.',
+        `No package for "${selectedPlan}".\n\n${offeringDiag}`,
       );
       return;
     }
@@ -401,17 +419,12 @@ const PaywallScreen: React.FC<PaywallScreenProps> = ({onClose, onPurchase}) => {
                   </View>
                   <View style={styles.cardTextColumn}>
                     <Text style={[styles.planTitle, {color: colors.textPrimary}]}>
-                      {plan.title}
+                      {plan.trialText ? plan.trialText : plan.title}
                     </Text>
-                    {plan.trialText && !isPro && (
-                      <Text style={[styles.planTrial, {color: colors.primary}]}>
-                        {plan.trialText}
-                      </Text>
-                    )}
                     <View style={styles.coinRow}>
                       <Ionicons name="logo-bitcoin" size={14} color={colors.primary} />
                       <Text style={[styles.coinText, {color: colors.textSecondary}]}>
-                        {plan.trialBonusCoins && !isPro
+                        {plan.trialBonusCoins
                           ? `${plan.trialBonusCoins} coins now · ${plan.bonusCoins.toLocaleString()} after trial`
                           : `${plan.bonusCoins.toLocaleString()} bonus coins`}
                       </Text>
@@ -421,14 +434,26 @@ const PaywallScreen: React.FC<PaywallScreenProps> = ({onClose, onPurchase}) => {
 
                 <View style={styles.cardRight}>
                   <Text style={[styles.planPrice, {color: colors.textPrimary}]}>
-                    {plan.price}
+                    {plan.trialText ? 'Free' : plan.price}
                   </Text>
                   <Text style={[styles.planBilling, {color: colors.textTertiary}]}>
-                    {plan.billingPeriod}
+                    {plan.trialText
+                      ? `then ${plan.price} / week`
+                      : plan.billingPeriod}
                   </Text>
+                  {plan.pricePerUnit && (
+                    <Text style={[styles.planPerUnit, {color: colors.textTertiary}]}>
+                      {plan.pricePerUnit}
+                    </Text>
+                  )}
                 </View>
 
-                {plan.isPopular && !isCurrentPlan && (
+                {plan.trialText && !isCurrentPlan && (
+                  <View style={[styles.popularBadge, {backgroundColor: colors.primary}]}>
+                    <Text style={styles.popularText}>{plan.title.toUpperCase()}</Text>
+                  </View>
+                )}
+                {plan.isPopular && !plan.trialText && !isCurrentPlan && (
                   <View style={[styles.popularBadge, {backgroundColor: colors.primary}]}>
                     <Text style={styles.popularText}>BEST VALUE</Text>
                   </View>
@@ -485,8 +510,12 @@ const PaywallScreen: React.FC<PaywallScreenProps> = ({onClose, onPurchase}) => {
             </Text>
           </TouchableOpacity>
         ) : (
-          <Text style={[styles.cancelText, {color: colors.textTertiary}]}>
-            Cancel anytime, no questions asked.
+          <Text style={[styles.disclosureText, {color: colors.textTertiary}]}>
+            Auto-renewing subscription. Payment is charged to your Apple ID at
+            purchase confirmation. Your subscription renews automatically at
+            the same price unless you turn off auto-renew at least 24 hours
+            before the end of the current period. Manage or cancel anytime in
+            Settings → Apple ID → Subscriptions.
           </Text>
         )}
 
@@ -589,7 +618,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   planTitle: {fontSize: 16, fontWeight: '700'},
-  planTrial: {fontSize: 12, fontWeight: '600', marginTop: 2},
   coinRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -599,6 +627,7 @@ const styles = StyleSheet.create({
   coinText: {fontSize: 12, fontWeight: '500'},
   planPrice: {fontSize: 22, fontWeight: '800'},
   planBilling: {fontSize: 11, marginTop: 2},
+  planPerUnit: {fontSize: 10, marginTop: 2, fontWeight: '500'},
   popularBadge: {
     position: 'absolute',
     top: -10,
@@ -645,7 +674,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   ctaText: {color: '#fff', fontSize: 18, fontWeight: '700'},
-  cancelText: {fontSize: 13, textAlign: 'center', marginTop: 10},
+  disclosureText: {
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 10,
+    marginHorizontal: 20,
+    lineHeight: 16,
+  },
   footerLinks: {
     flexDirection: 'row',
     justifyContent: 'center',
