@@ -25,7 +25,7 @@ import {
 } from '../services/userPhotosApi';
 import CustomDialog from './CustomDialog';
 import FullScreenImageModal from './FullScreenImageModal';
-import {requestPhotoLibraryPermission} from '../utils/permissions';
+import {requestPhotoLibraryPermissionDetailed, saveToCameraRoll} from '../utils/permissions';
 
 interface HistoryGalleryProps {
   visible: boolean;
@@ -165,8 +165,9 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
 
   const handleSave = async (imageUrl: string) => {
     try {
-      const hasPermission = await requestPhotoLibraryPermission();
-      if (!hasPermission) {
+      const permission = await requestPhotoLibraryPermissionDetailed();
+      if (permission === 'cancelled') return;
+      if (permission === 'denied') {
         showMessage('warning', 'Permission Denied', 'Cannot save without permission');
         return;
       }
@@ -177,7 +178,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
       if (isLocalFile) {
         // For local files, save directly to camera roll
         const localPath = imageUrl.startsWith('file://') ? imageUrl : `file://${imageUrl}`;
-        await CameraRoll.saveAsset(localPath, {type: 'photo'});
+        await saveToCameraRoll(localPath, {type: 'photo'});
       } else {
         // For remote URLs, download first then save
         const fileName = `transformed_${Date.now()}.png`;
@@ -192,12 +193,14 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
           throw new Error('Failed to download image');
         }
 
-        await CameraRoll.saveAsset(`file://${filePath}`, {type: 'photo'});
-        await RNFS.unlink(filePath);
+        await saveToCameraRoll(`file://${filePath}`, {type: 'photo'});
+        // Cleanup is best-effort — saveAsset may have already moved/imported the file.
+        await RNFS.unlink(filePath).catch(() => {});
       }
 
       showMessage('success', 'Saved!', 'Photo saved to your gallery');
-    } catch {
+    } catch (error) {
+      console.error('Save error:', error);
       showMessage('error', 'Error', 'Failed to save photo');
     }
   };
@@ -231,7 +234,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({visible, onClose}) => {
         type: item.mimeType || 'image/png',
       });
 
-      await RNFS.unlink(filePath);
+      await RNFS.unlink(filePath).catch(() => {});
     } catch (error: any) {
       if (error?.message !== 'User did not share') {
         showMessage('error', 'Error', 'Failed to share photo');

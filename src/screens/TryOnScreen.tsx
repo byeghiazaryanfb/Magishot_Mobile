@@ -10,6 +10,7 @@ import {useWalkthrough, WALKTHROUGH_KEYS} from '../hooks/useWalkthrough';
 import TryOnArea from '../components/TryOnArea';
 import TryOnResultModal from '../components/TryOnResultModal';
 import Logo from '../components/Logo';
+import ExecutionsBadge from '../components/ExecutionsBadge';
 
 const TryOnScreen: React.FC = () => {
   const {colors} = useTheme();
@@ -104,6 +105,7 @@ const TryOnScreen: React.FC = () => {
         </View>
 
         <View style={styles.headerRight}>
+          <ExecutionsBadge size={themeToggleSize} iconSize={themeIconSize} />
           <TouchableOpacity
             style={[
               styles.headerButton,

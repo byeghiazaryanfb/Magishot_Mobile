@@ -318,6 +318,26 @@ const videoNotificationSlice = createSlice({
             state.viewedVideoIds[v.videoId] = true;
           }
         });
+        // Reconcile in-flight jobs against the fresh gallery. Without this, a
+        // VideoReady SignalR event that uses a different videoId than the one
+        // returned by POST /generate would leave the original pending entry
+        // stuck in state.jobs forever, keeping the top-bar spinner running.
+        response.videos.forEach(v => {
+          const job = state.jobs[v.videoId];
+          if (!job) return;
+          if (job.status !== 'pending' && job.status !== 'processing') return;
+          if (v.status === 'Completed' && v.videoUrl) {
+            job.status = 'ready';
+            job.videoUrl = v.videoUrl;
+            job.fileName = v.fileName;
+            job.mimeType = v.mimeType;
+            job.durationSeconds = v.durationSeconds;
+            job.thumbnailUrl = v.thumbnailUrl ?? null;
+          } else if (v.status === 'Failed') {
+            job.status = 'failed';
+            job.errorMessage = v.errorMessage || undefined;
+          }
+        });
         state.galleryHasMore = response.hasMore;
         state.galleryNextCursor = response.nextCursor;
         state.isLoadingGallery = false;

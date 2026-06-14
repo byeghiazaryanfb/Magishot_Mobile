@@ -9,6 +9,7 @@ import type { ApiError } from '../types';
 type TokenRefreshCallback = (newAccessToken: string, newRefreshToken: string) => void;
 type GetTokensCallback = () => { accessToken: string | null; refreshToken: string | null };
 type OnAuthFailureCallback = () => void;
+type OnSubscriptionRequiredCallback = (message: string) => void;
 
 class ApiService {
   private baseUrl: string;
@@ -18,6 +19,7 @@ class ApiService {
   private onTokenRefresh: TokenRefreshCallback | null = null;
   private getTokens: GetTokensCallback | null = null;
   private onAuthFailure: OnAuthFailureCallback | null = null;
+  private onSubscriptionRequired: OnSubscriptionRequiredCallback | null = null;
 
   constructor() {
     this.baseUrl = config.apiBaseUrl;
@@ -35,6 +37,29 @@ class ApiService {
     this.getTokens = getTokens;
     this.onTokenRefresh = onTokenRefresh;
     this.onAuthFailure = onAuthFailure;
+  }
+
+  /**
+   * Register a global handler invoked whenever the backend rejects a request
+   * with errorCode "subscription_required" (HTTP 402). Used to show a single
+   * "subscription expired — coins are saved" prompt regardless of which
+   * feature triggered the spend.
+   */
+  setOnSubscriptionRequired(cb: OnSubscriptionRequiredCallback) {
+    this.onSubscriptionRequired = cb;
+  }
+
+  /**
+   * Manually fire the subscription-required prompt without making a request.
+   * Used by client-side spend pre-checks so they don't have to wait for the
+   * backend to reject — and so the user sees the right message instead of a
+   * misleading "insufficient balance" when the real issue is that their
+   * subscription has expired.
+   */
+  triggerSubscriptionRequired(message?: string) {
+    this.onSubscriptionRequired?.(
+      message ?? 'An active Pro subscription is required to spend coins.',
+    );
   }
 
   /**
@@ -162,6 +187,12 @@ class ApiService {
         error = JSON.parse(responseText);
       } catch {
         error = { message: responseText || `HTTP ${response.status}: ${response.statusText}` };
+      }
+      // Subscription expired but coins are kept — surface a global prompt so
+      // every spend hot path doesn't have to handle this individually.
+      const errCode = (error as ApiError & { errorCode?: string }).errorCode;
+      if (response.status === 402 && errCode === 'subscription_required') {
+        this.onSubscriptionRequired?.(error.message);
       }
       throw error;
     }

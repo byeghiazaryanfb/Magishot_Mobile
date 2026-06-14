@@ -20,6 +20,8 @@ import {launchImageLibrary} from 'react-native-image-picker';
 import {useTheme} from '../theme/ThemeContext';
 import GradientButton from '../components/GradientButton';
 import CustomDialog from '../components/CustomDialog';
+import AiConsentDialog from '../components/AiConsentDialog';
+import {useAiConsent} from '../hooks/useAiConsent';
 import {config} from '../utils/config';
 import api from '../services/api';
 import {useAppDispatch, useAppSelector} from '../store/hooks';
@@ -90,6 +92,7 @@ const SubtitleScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const dispatch = useAppDispatch();
   const accessToken = useAppSelector(state => state.auth.accessToken);
+  const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
 
   // Video source
   const [videoFile, setVideoFile] = useState<{
@@ -245,6 +248,7 @@ const SubtitleScreen: React.FC = () => {
     if (!hasVideoSource) {
       return;
     }
+    if (!(await requireConsent())) return;
 
     try {
       setIsSubmitting(true);
@@ -1067,6 +1071,12 @@ const SubtitleScreen: React.FC = () => {
         message={dialog.message}
         buttons={[{text: 'Got it', onPress: hideDialog, style: 'default'}]}
         onClose={hideDialog}
+      />
+
+      <AiConsentDialog
+        visible={consentVisible}
+        onAccept={onConsentAccept}
+        onDecline={onConsentDecline}
       />
     </View>
   );

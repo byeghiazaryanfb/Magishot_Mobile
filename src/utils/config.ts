@@ -6,14 +6,16 @@
 export const config = {
   // API base URL - update this to match your backend URL
   apiBaseUrl: __DEV__
-  ? 'http://192.168.10.30:5001' // Office
-   // ? 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net' // Home
+  //? 'http://192.168.10.30:5001' // Office
+  ? 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net' // Home
+    //? 'http://192.168.0.102:5001' // en0
     : 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net', // Production
 
   // Gemini API base URL for image transformation
   geminiApiBaseUrl: __DEV__
-  ? 'http://192.168.10.30:5001' // Office
-  // ? 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net' // Home
+  //? 'http://192.168.10.30:5001' // Office
+  ? 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net' // Home
+    //? 'http://192.168.0.102:5001' // en0
     : 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net', // Production
 
   // API timeout in milliseconds
@@ -23,10 +25,15 @@ export const config = {
   imageTransformTimeout: 120000,
 
   // App version
-  appVersion: '1.0.0', 
+  appVersion: '1.0.5',
 
   // Support email
   supportEmail: 'info@softsfab.com',
+
+  // Public legal URLs — used as a browser fallback when the in-app
+  // legal-content fetch fails or is slow (App Review reliability).
+  termsUrl: 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net/terms',
+  privacyUrl: 'https://picgen-app-efdqepdbdme0g5gm.centralus-01.azurewebsites.net/privacy',
 };
 
 export default config;

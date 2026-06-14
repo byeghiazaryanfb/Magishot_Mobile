@@ -36,10 +36,13 @@ import type {RootState} from '../store';
 import {useAppDispatch} from '../store/hooks';
 import {addPendingComicJob} from '../store/slices/comicNotificationSlice';
 import {fetchCoinBalance} from '../store/slices/authSlice';
+import {fetchUnreadCounts} from '../store/slices/appSlice';
 import {useServicePrices} from '../hooks/useServicePrices';
-import {requestPhotoLibraryPermission} from '../utils/permissions';
+import {requestPhotoLibraryPermissionDetailed, saveToCameraRoll} from '../utils/permissions';
 import AiConsentDialog from '../components/AiConsentDialog';
 import {useAiConsent} from '../hooks/useAiConsent';
+import {useIsPro} from '../hooks/useSubscription';
+import api from '../services/api';
 
 const MAX_PHOTOS = 7;
 const HEADER_HEIGHT = 56;
@@ -60,6 +63,7 @@ const ComicsScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<ComicsRouteProp>();
   const accessToken = useSelector((state: RootState) => state.auth.accessToken);
+  const isPro = useIsPro();
   const dispatch = useAppDispatch();
   const {comicPrice} = useServicePrices();
   const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
@@ -145,8 +149,9 @@ const ComicsScreen: React.FC = () => {
   const handleSave = async () => {
     if (!comic) return;
     try {
-      const hasPermission = await requestPhotoLibraryPermission();
-      if (!hasPermission) {
+      const permission = await requestPhotoLibraryPermissionDetailed();
+      if (permission === 'cancelled') return;
+      if (permission === 'denied') {
         showMessage('error', 'Permission Denied', 'Cannot save without photo library permission');
         return;
       }
@@ -154,7 +159,7 @@ const ComicsScreen: React.FC = () => {
       const filePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
       const downloadResult = await RNFS.downloadFile({fromUrl: comic.fullUrl, toFile: filePath}).promise;
       if (downloadResult.statusCode !== 200) throw new Error('Download failed');
-      await CameraRoll.saveAsset(`file://${filePath}`, {type: 'photo'});
+      await saveToCameraRoll(`file://${filePath}`, {type: 'photo'});
       await RNFS.unlink(filePath).catch(() => {});
       showMessage('success', 'Saved!', 'Comic saved to your photo gallery');
     } catch {
@@ -190,6 +195,7 @@ const ComicsScreen: React.FC = () => {
     setIsDeleting(true);
     try {
       await deleteComic(comic.id, accessToken);
+      dispatch(fetchUnreadCounts());
       setDeleteDialogVisible(false);
       showMessage('success', 'Deleted', 'Comic deleted successfully');
       // Go back to upload state after brief delay
@@ -224,6 +230,12 @@ const ComicsScreen: React.FC = () => {
   };
 
   const handleGenerate = async () => {
+    if (!isPro) {
+      api.triggerSubscriptionRequired(
+        'An active Pro subscription is required to generate comics.',
+      );
+      return;
+    }
     if (!(await requireConsent())) return;
     if (!canGenerate || !accessToken) return;
 

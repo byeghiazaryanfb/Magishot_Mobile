@@ -9,6 +9,7 @@ import {useTheme} from '../theme/ThemeContext';
 import CameraArea from '../components/CameraArea';
 import ResultModal from '../components/ResultModal';
 import Logo from '../components/Logo';
+import ExecutionsBadge from '../components/ExecutionsBadge';
 import {useWalkthrough, WALKTHROUGH_KEYS} from '../hooks/useWalkthrough';
 
 const HomeScreen: React.FC = () => {
@@ -90,6 +91,7 @@ const HomeScreen: React.FC = () => {
         </View>
 
         <View style={styles.headerRight}>
+          <ExecutionsBadge size={themeToggleSize} iconSize={themeIconSize} />
           <TouchableOpacity
             style={[
               styles.headerButton,

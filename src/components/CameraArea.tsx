@@ -46,8 +46,10 @@ import FullScreenImageModal from './FullScreenImageModal';
 import CustomDialog from './CustomDialog';
 import {CharacterItem, getFullCharacterImageUrl} from '../services/charactersApi';
 import {config} from '../utils/config';
-import {requestPhotoLibraryPermission} from '../utils/permissions';
+import {requestPhotoLibraryPermissionDetailed, saveToCameraRoll} from '../utils/permissions';
 import {useServicePrices} from '../hooks/useServicePrices';
+import {useIsPro} from '../hooks/useSubscription';
+import api from '../services/api';
 import {addPendingJob} from '../store/slices/videoNotificationSlice';
 import {addPendingImageJob, addPendingSynthesizeJobs} from '../store/slices/imageNotificationSlice';
 import {toggleBusinessMode} from '../store/slices/appSlice';
@@ -84,6 +86,7 @@ const CameraArea: React.FC = () => {
   const styleMode = useAppSelector(state => state.transform.styleMode);
   const accessToken = useAppSelector(state => state.auth.accessToken);
   const {openEyesPrice, extendPrice, restorePrice, animationPrice, refinePrice} = useServicePrices();
+  const isPro = useIsPro();
   const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
 
   // Calculate accumulated coin cost from selected template + accessories (Effects mode)
@@ -470,6 +473,10 @@ const CameraArea: React.FC = () => {
 
     // Fresh balance check from server
     if (totalCoins > 0 && accessToken) {
+      if (!isPro) {
+        api.triggerSubscriptionRequired();
+        return;
+      }
       const balanceResult = await dispatch(fetchCoinBalance(accessToken));
       const freshBalance = balanceResult.payload as number | undefined;
       if (freshBalance === undefined || freshBalance < totalCoins) {
@@ -734,6 +741,10 @@ const CameraArea: React.FC = () => {
     // Fresh balance check from server
     const requiredCoins = selectedSynthesizeAction?.estimatedCoins ?? 0;
     if (requiredCoins > 0 && accessToken) {
+      if (!isPro) {
+        api.triggerSubscriptionRequired();
+        return;
+      }
       const balanceResult = await dispatch(fetchCoinBalance(accessToken));
       const freshBalance = balanceResult.payload as number | undefined;
       if (freshBalance === undefined || freshBalance < requiredCoins) {
@@ -823,6 +834,10 @@ const CameraArea: React.FC = () => {
     // Fresh balance check from server
     const requiredCoins = openEyesPrice?.estimatedCoins ?? 0;
     if (requiredCoins > 0 && accessToken) {
+      if (!isPro) {
+        api.triggerSubscriptionRequired();
+        return;
+      }
       const balanceResult = await dispatch(fetchCoinBalance(accessToken));
       const freshBalance = balanceResult.payload as number | undefined;
       if (freshBalance === undefined || freshBalance < requiredCoins) {
@@ -901,6 +916,10 @@ const CameraArea: React.FC = () => {
     // Fresh balance check from server
     const requiredCoins = restorePrice?.estimatedCoins ?? 0;
     if (requiredCoins > 0 && accessToken) {
+      if (!isPro) {
+        api.triggerSubscriptionRequired();
+        return;
+      }
       const balanceResult = await dispatch(fetchCoinBalance(accessToken));
       const freshBalance = balanceResult.payload as number | undefined;
       if (freshBalance === undefined || freshBalance < requiredCoins) {
@@ -978,6 +997,10 @@ const CameraArea: React.FC = () => {
     // Fresh balance check from server
     const requiredCoins = refinePrice?.estimatedCoins ?? 0;
     if (requiredCoins > 0 && accessToken) {
+      if (!isPro) {
+        api.triggerSubscriptionRequired();
+        return;
+      }
       const balanceResult = await dispatch(fetchCoinBalance(accessToken));
       const freshBalance = balanceResult.payload as number | undefined;
       if (freshBalance === undefined || freshBalance < requiredCoins) {
@@ -1055,6 +1078,10 @@ const CameraArea: React.FC = () => {
     // Fresh balance check from server
     const requiredCoins = animationPrice?.estimatedCoins ?? 0;
     if (requiredCoins > 0 && accessToken) {
+      if (!isPro) {
+        api.triggerSubscriptionRequired();
+        return;
+      }
       const balanceResult = await dispatch(fetchCoinBalance(accessToken));
       const freshBalance = balanceResult.payload as number | undefined;
       if (freshBalance === undefined || freshBalance < requiredCoins) {
@@ -1877,6 +1904,10 @@ const CameraArea: React.FC = () => {
     // Fresh balance check from server
     const requiredCoins = extendPrice?.estimatedCoins ?? 0;
     if (requiredCoins > 0 && accessToken) {
+      if (!isPro) {
+        api.triggerSubscriptionRequired();
+        return;
+      }
       const balanceResult = await dispatch(fetchCoinBalance(accessToken));
       const freshBalance = balanceResult.payload as number | undefined;
       if (freshBalance === undefined || freshBalance < requiredCoins) {
@@ -2027,8 +2058,9 @@ const CameraArea: React.FC = () => {
   const handleCleanBgSave = async () => {
     if (!cleanBgResultUrl) { return; }
     try {
-      const hasPermission = await requestPhotoLibraryPermission();
-      if (!hasPermission) {
+      const permission = await requestPhotoLibraryPermissionDetailed();
+      if (permission === 'cancelled') return;
+      if (permission === 'denied') {
         showError('Permission Denied', 'Cannot save without permission');
         return;
       }
@@ -2037,7 +2069,7 @@ const CameraArea: React.FC = () => {
       const filePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
       const dl = await RNFS.downloadFile({fromUrl: cleanBgResultUrl, toFile: filePath}).promise;
       if (dl.statusCode !== 200) { throw new Error('Failed to download image'); }
-      await CameraRoll.saveAsset(`file://${filePath}`, {type: 'photo'});
+      await saveToCameraRoll(`file://${filePath}`, {type: 'photo'});
       await RNFS.unlink(filePath).catch(() => {});
       setShowMaskModal(false);
       // Small delay so the modal closes before the dialog appears
@@ -2347,15 +2379,6 @@ const CameraArea: React.FC = () => {
           <Ionicons name="book" size={16} color={colors.textSecondary} />
           <Text style={[styles.styleModeButtonText, {color: colors.textSecondary}]}>
             Comics
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.styleModeButton, {backgroundColor: colors.backgroundTertiary}]}
-          onPress={() => (navigation as any).navigate('Subtitle')}
-          activeOpacity={0.8}>
-          <Ionicons name="text" size={16} color={colors.textSecondary} />
-          <Text style={[styles.styleModeButtonText, {color: colors.textSecondary}]}>
-            Subtitles
           </Text>
         </TouchableOpacity>
       </ScrollView>

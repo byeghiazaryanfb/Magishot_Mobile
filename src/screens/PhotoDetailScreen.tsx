@@ -22,7 +22,7 @@ import {useAppSelector, useAppDispatch} from '../store/hooks';
 import {UserPhoto, deleteUserPhoto, markPhotoOpened} from '../services/userPhotosApi';
 import {fetchUnreadCounts, markPhotoViewed} from '../store/slices/appSlice';
 import CustomDialog from '../components/CustomDialog';
-import {requestPhotoLibraryPermission} from '../utils/permissions';
+import {requestPhotoLibraryPermissionDetailed, saveToCameraRoll} from '../utils/permissions';
 import type {RootStackParamList} from '../navigation/RootNavigator';
 
 type PhotoDetailRouteProp = RouteProp<RootStackParamList, 'PhotoDetail'>;
@@ -179,25 +179,28 @@ const PhotoDetailScreen: React.FC = () => {
 
   const handleSave = async (imageUrl: string) => {
     try {
-      const hasPermission = await requestPhotoLibraryPermission();
-      if (!hasPermission) {
+      const permission = await requestPhotoLibraryPermissionDetailed();
+      if (permission === 'cancelled') return;
+      if (permission === 'denied') {
         showMessage('warning', 'Permission Denied', 'Cannot save without permission');
         return;
       }
       const isLocalFile = imageUrl.startsWith('file://') || imageUrl.startsWith('/');
       if (isLocalFile) {
         const localPath = imageUrl.startsWith('file://') ? imageUrl : `file://${imageUrl}`;
-        await CameraRoll.saveAsset(localPath, {type: 'photo'});
+        await saveToCameraRoll(localPath, {type: 'photo'});
       } else {
         const fileName = `transformed_${Date.now()}.png`;
         const filePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
         const downloadResult = await RNFS.downloadFile({fromUrl: imageUrl, toFile: filePath}).promise;
         if (downloadResult.statusCode !== 200) throw new Error('Failed to download image');
-        await CameraRoll.saveAsset(`file://${filePath}`, {type: 'photo'});
-        await RNFS.unlink(filePath);
+        await saveToCameraRoll(`file://${filePath}`, {type: 'photo'});
+        // Cleanup is best-effort — saveAsset may have already moved/imported the file.
+        await RNFS.unlink(filePath).catch(() => {});
       }
       showMessage('success', 'Saved!', 'Photo saved to your gallery');
-    } catch {
+    } catch (error) {
+      console.error('Save error:', error);
       showMessage('error', 'Error', 'Failed to save photo');
     }
   };
@@ -234,6 +237,7 @@ const PhotoDetailScreen: React.FC = () => {
     setIsDeleting(true);
     try {
       await deleteUserPhoto(accessToken, currentPhoto.id);
+      dispatch(fetchUnreadCounts());
       const newPhotos = photos.filter(p => p.id !== currentPhoto.id);
       if (newPhotos.length === 0) {
         navigation.goBack();

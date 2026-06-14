@@ -33,6 +33,8 @@ import PhotoPickerModal from './PhotoPickerModal';
 import ProductPickerModal from './ProductPickerModal';
 import CustomDialog from './CustomDialog';
 import {useServicePrices} from '../hooks/useServicePrices';
+import {useIsPro} from '../hooks/useSubscription';
+import api from '../services/api';
 import FullScreenImageModal from './FullScreenImageModal';
 import {ProductItem} from '../services/productsApi';
 import {useTryOnPrompts} from '../hooks/useTryOnPrompts';
@@ -50,6 +52,7 @@ const TryOnArea: React.FC = () => {
   const selectedProduct = useAppSelector(state => state.tryOn.selectedProduct);
   const accessToken = useAppSelector(state => state.auth.accessToken);
   const {tryOnPrice} = useServicePrices();
+  const isPro = useIsPro();
   const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -123,6 +126,10 @@ const TryOnArea: React.FC = () => {
     // Fresh balance check from server
     const requiredCoins = tryOnPrice?.estimatedCoins ?? 0;
     if (requiredCoins > 0 && accessToken) {
+      if (!isPro) {
+        api.triggerSubscriptionRequired();
+        return;
+      }
       const balanceResult = await dispatch(fetchCoinBalance(accessToken));
       const freshBalance = balanceResult.payload as number | undefined;
       if (freshBalance === undefined || freshBalance < requiredCoins) {

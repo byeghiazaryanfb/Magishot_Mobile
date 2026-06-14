@@ -25,7 +25,7 @@ import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import Share from 'react-native-share';
 import ViewShot from 'react-native-view-shot';
 import {triggerHaptic} from '../utils/haptics';
-import {requestPhotoLibraryPermission} from '../utils/permissions';
+import {requestPhotoLibraryPermissionDetailed, saveToCameraRoll} from '../utils/permissions';
 import {
   Canvas,
   Image as SkiaImage,
@@ -49,10 +49,13 @@ import RNFS from 'react-native-fs';
 import Clipboard from '@react-native-clipboard/clipboard';
 import type {SkImage} from '@shopify/react-native-skia';
 import {useTheme} from '../theme/ThemeContext';
+import {useIsPro} from '../hooks/useSubscription';
+import api from '../services/api';
 import {useAppDispatch} from '../store/hooks';
 import {fetchCoinBalance} from '../store/slices/authSlice';
 import {addToHistory} from '../store/slices/historySlice';
 import Logo from '../components/Logo';
+import ExecutionsBadge from '../components/ExecutionsBadge';
 import PhotoPickerModal from '../components/PhotoPickerModal';
 import {useWalkthrough, WALKTHROUGH_KEYS} from '../hooks/useWalkthrough';
 
@@ -158,6 +161,7 @@ const EditScreen: React.FC = () => {
   const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount;
   const notificationUnreadCount = useSelector((state: RootState) => state.notification.unreadCount);
   const {captionPrice} = useServicePrices();
+  const isPro = useIsPro();
   const {requireConsent, consentVisible, onConsentAccept, onConsentDecline} = useAiConsent();
 
   // Walkthrough for Edit tab
@@ -913,8 +917,13 @@ const EditScreen: React.FC = () => {
     setIsEditingText(false);
     setTextSelected(false);
     try {
-      const hasPermission = await requestPhotoLibraryPermission();
-      if (!hasPermission) {
+      const permission = await requestPhotoLibraryPermissionDetailed();
+      if (permission === 'cancelled') {
+        setIsSaving(false);
+        setTextSelected(true);
+        return;
+      }
+      if (permission === 'denied') {
         showMessage('warning', 'Permission Denied', 'Cannot save without permission');
         setIsSaving(false);
         setTextSelected(true);
@@ -927,7 +936,7 @@ const EditScreen: React.FC = () => {
       // Capture the edited image with filters and frames
       const uri = await viewShotRef.current.capture?.();
       if (uri) {
-        await CameraRoll.saveAsset(uri, {type: 'photo'});
+        await saveToCameraRoll(uri, {type: 'photo'});
 
         // Build edit description for history
         const editParts: string[] = [];
@@ -2823,6 +2832,10 @@ const EditScreen: React.FC = () => {
     // Fresh balance check from server
     const requiredCoins = captionPrice?.estimatedCoins ?? 0;
     if (requiredCoins > 0 && accessToken) {
+      if (!isPro) {
+        api.triggerSubscriptionRequired();
+        return;
+      }
       const balanceResult = await dispatch(fetchCoinBalance(accessToken));
       const freshBalance = balanceResult.payload as number | undefined;
       if (freshBalance === undefined || freshBalance < requiredCoins) {
@@ -3006,6 +3019,7 @@ const EditScreen: React.FC = () => {
           <Logo size={isTablet ? 140 : 100} />
         </View>
         <View style={styles.headerRight}>
+          <ExecutionsBadge size={themeToggleSize} iconSize={themeIconSize} />
           <TouchableOpacity
             style={[
               styles.headerButton,

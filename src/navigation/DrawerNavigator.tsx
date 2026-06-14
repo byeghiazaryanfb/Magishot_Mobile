@@ -9,6 +9,7 @@ import {
   Modal,
   ScrollView,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import {
   createDrawerNavigator,
@@ -29,6 +30,9 @@ import PalettePickerModal from '../components/PalettePickerModal';
 import ContactSupportModal from '../components/ContactSupportModal';
 import CustomDialog from '../components/CustomDialog';
 import RateAppModal from '../components/RateAppModal';
+import CoinInfoModal from '../components/CoinInfoModal';
+import {useIsPro, useCustomerInfo} from '../hooks/useSubscription';
+import {ENTITLEMENT_ID} from '../services/purchases';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 
@@ -93,7 +97,6 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
   const dispatch = useAppDispatch();
   const [showPalettePicker, setShowPalettePicker] = useState(false);
   const [showContactSupport, setShowContactSupport] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -105,12 +108,28 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
   const [comingSoonFeature, setComingSoonFeature] = useState('');
   const [showOnboardingPreview, setShowOnboardingPreview] = useState(false);
   const [showWelcomePreview, setShowWelcomePreview] = useState(false);
+  const [showCoinInfo, setShowCoinInfo] = useState(false);
+  const [showActiveSubWarning, setShowActiveSubWarning] = useState(false);
+  const isPro = useIsPro();
+  const customerInfo = useCustomerInfo();
+
+  const planLabel = (() => {
+    if (!isPro) return 'Free Plan';
+    const entitlement = customerInfo?.entitlements.active[ENTITLEMENT_ID];
+    const productId = entitlement?.productIdentifier?.toLowerCase() ?? '';
+    const isTrial = entitlement?.periodType === 'trial';
+    let tier = 'Pro';
+    if (productId.includes('week')) tier = 'Weekly Pro';
+    else if (productId.includes('month')) tier = 'Monthly Pro';
+    else if (productId.includes('year') || productId.includes('annual')) tier = 'Yearly Pro';
+    return isTrial ? `${tier} (Trial)` : tier;
+  })();
   const [legalModal, setLegalModal] = useState<{visible: boolean; title: string; content: string; isLoading: boolean}>({
     visible: false, title: '', content: '', isLoading: false,
   });
   const {username, email, refreshToken, accessToken, coinBalance} = useAppSelector(state => state.auth);
-  const {unopenedPhotosCount, unplayedVideosCount} = useAppSelector(state => state.app);
-  const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount;
+  const {unopenedPhotosCount, unplayedVideosCount, unviewedComicsCount} = useAppSelector(state => state.app);
+  const totalUnreadCount = unopenedPhotosCount + unplayedVideosCount + unviewedComicsCount;
 
   const drawerStatus = useDrawerStatus();
 
@@ -171,6 +190,24 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
   };
 
   const handleDeleteAccount = () => {
+    // Always show the subscription warning before deletion. RevenueCat's
+    // cached state can lag behind Apple, and a user mid-trial still has an
+    // Apple-side subscription that will convert to paid after the trial
+    // ends. Showing the warning every time avoids surprise charges.
+    setShowActiveSubWarning(true);
+  };
+
+  const openManageSubscription = async () => {
+    setShowActiveSubWarning(false);
+    try {
+      await Linking.openURL('https://apps.apple.com/account/subscriptions');
+    } catch {
+      // No-op: user can navigate manually
+    }
+  };
+
+  const proceedDeleteAnyway = () => {
+    setShowActiveSubWarning(false);
     setShowDeleteAccountConfirm(true);
   };
 
@@ -259,13 +296,24 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
             <View style={styles.proBadgeRow}>
               <View style={styles.proBadge}>
                 <Ionicons name="star" size={12} color="#FFD700" />
-                <Text style={styles.proBadgeText}>Free Plan</Text>
+                <Text style={styles.proBadgeText}>{planLabel}</Text>
               </View>
               {coinBalance !== null && (
                 <View style={styles.coinBadge}>
                   <Text style={styles.coinBadgeText}>★ {coinBalance}</Text>
                 </View>
               )}
+              <TouchableOpacity
+                style={styles.coinInfoIcon}
+                onPress={() => setShowCoinInfo(true)}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+                activeOpacity={0.7}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={18}
+                  color="rgba(255,255,255,0.85)"
+                />
+              </TouchableOpacity>
             </View>
           </View>
           <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
@@ -286,7 +334,7 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
             icon="card-outline"
             label="Subscription"
             onPress={() => handleMenuPress('Subscription')}
-            badge="PRO"
+            badge={isPro ? 'PRO' : undefined}
           />
           <MenuItem
             icon="images-outline"
@@ -329,23 +377,6 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
               color="rgba(255,255,255,0.5)"
             />
           </TouchableOpacity>
-          <View style={styles.menuItem}>
-            <View style={styles.menuItemLeft}>
-              <Ionicons
-                name={notificationsEnabled ? 'notifications' : 'notifications-outline'}
-                size={22}
-                color="rgba(255,255,255,0.7)"
-              />
-              <Text style={styles.menuItemLabel}>Notifications</Text>
-            </View>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
-              trackColor={{false: 'rgba(255,255,255,0.2)', true: '#FF1B6D'}}
-              thumbColor={notificationsEnabled ? '#fff' : '#f4f3f4'}
-              ios_backgroundColor="rgba(255,255,255,0.2)"
-            />
-          </View>
         </View>
 
         <View style={styles.menuSection}>
@@ -437,6 +468,10 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
         visible={showRateApp}
         onClose={() => setShowRateApp(false)}
       />
+      <CoinInfoModal
+        visible={showCoinInfo}
+        onClose={() => setShowCoinInfo(false)}
+      />
       <CustomDialog
         visible={showLogoutConfirm}
         icon="log-out-outline"
@@ -448,6 +483,19 @@ const CustomDrawerContent: React.FC<DrawerContentComponentProps> = props => {
           {text: 'Logout', onPress: confirmLogout, style: 'destructive'},
         ]}
         onClose={() => setShowLogoutConfirm(false)}
+      />
+      <CustomDialog
+        visible={showActiveSubWarning}
+        icon="card-outline"
+        iconColor="#FF9500"
+        title="Cancel Subscription First"
+        message={"Deleting your account will NOT cancel any active subscription — Apple will keep charging you (including converting a free trial into a paid plan) until you cancel from the App Store.\n\nIf you have a subscription, cancel it in the App Store first, then come back to delete your account."}
+        buttons={[
+          {text: 'Manage Subscription', onPress: openManageSubscription, style: 'default'},
+          {text: 'Delete Anyway', onPress: proceedDeleteAnyway, style: 'destructive'},
+          {text: 'Cancel', onPress: () => setShowActiveSubWarning(false), style: 'cancel'},
+        ]}
+        onClose={() => setShowActiveSubWarning(false)}
       />
       <CustomDialog
         visible={showDeleteAccountConfirm}
@@ -625,6 +673,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#FFD700',
+  },
+  coinInfoIcon: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 22,
+    height: 22,
   },
   divider: {
     height: 1,

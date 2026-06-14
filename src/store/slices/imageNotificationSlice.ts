@@ -1,4 +1,6 @@
-import {createSlice, PayloadAction} from '@reduxjs/toolkit';
+import {createSlice, createAsyncThunk, PayloadAction} from '@reduxjs/toolkit';
+import {getUserPhotos} from '../../services/userPhotosApi';
+import type {RootState} from '../index';
 
 export type ImageJobStatus = 'pending' | 'processing' | 'ready' | 'failed';
 
@@ -177,5 +179,53 @@ export const {
   clearStaleImageJobs,
   clearAllImageNotifications,
 } = imageNotificationSlice.actions;
+
+// Reconcile in-flight image jobs against the backend. Used when the app
+// returns to the foreground, since SignalR events that fired while we were
+// backgrounded are lost on reconnect.
+export const reconcilePendingImageJobs = createAsyncThunk(
+  'imageNotification/reconcilePending',
+  async (_, {getState, dispatch}) => {
+    const state = getState() as RootState;
+    const token = state.auth.accessToken;
+    if (!token) return;
+
+    const pendingIds = Object.values(state.imageNotification.jobs)
+      .filter(j => j.status === 'pending' || j.status === 'processing')
+      .map(j => j.photoId);
+
+    if (pendingIds.length === 0) return;
+
+    try {
+      const pageSize = Math.max(20, pendingIds.length * 2);
+      const response = await getUserPhotos(token, undefined, pageSize);
+      const byId = new Map(response.photos.map(p => [p.id, p]));
+
+      pendingIds.forEach(photoId => {
+        const photo = byId.get(photoId);
+        if (!photo) return;
+        if (photo.status === 'Completed' && photo.fullUrl) {
+          dispatch(
+            setImageJobReady({
+              photoId,
+              imageUrl: photo.fullUrl,
+              fileName: photo.fileName,
+              mimeType: photo.mimeType,
+            }),
+          );
+        } else if (photo.status === 'Failed') {
+          dispatch(
+            setImageJobFailed({
+              photoId,
+              errorMessage: photo.errorMessage || undefined,
+            }),
+          );
+        }
+      });
+    } catch (e) {
+      console.warn('[reconcile] image jobs failed:', e);
+    }
+  },
+);
 
 export default imageNotificationSlice.reducer;
